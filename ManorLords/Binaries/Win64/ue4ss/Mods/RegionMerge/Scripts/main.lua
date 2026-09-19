@@ -7,8 +7,9 @@
 -- the town on placement, spawn and load. This script decides what to merge
 -- and moves what an existing settlement already owns.
 local PREFIX = "[RegionMerge] "
-local MAGIC_RESIDENT = -777703 -- native op 3: move resident unit into Context region
-local MAGIC_MOVE_ALL = -777704 -- native op 4: move a region's buildings into Context region
+-- Commands to RegionMergeNative, sent as SetFamilyHome(familyID = magic, ...)
+local MAGIC_RESIDENT = -777701 -- op 1: move a resident unit into the Context region
+local MAGIC_MERGE = -777702    -- op 2: move a region's buildings into Context and share its trees
 local OUTPOST = 5              -- ESettlementType::Outpost
 
 local function log(msg) print(PREFIX .. msg .. "\n") end
@@ -61,18 +62,28 @@ end
 local W = { engine_addr = nil, ready_at = 0 }
 
 local function refresh_world()
-    local e = FindFirstOf("RTSMultiEngineCPP")
-    if not valid(e) then W = { ready_at = 0 }; return false end
+    -- Reuse the engine while it lives; FindFirstOf walks the object table.
+    local e = W.engine
+    if not valid(e) then
+        e = FindFirstOf("RTSMultiEngineCPP")
+        if not valid(e) then W = { ready_at = 0 }; return false end
+    end
     local key = e:GetAddress()
     if key ~= W.engine_addr then
-        W = { engine_addr = key, engine = e, ready_at = os.clock() + 8, merged = {}, fresh = {}, hidden = {} }
+        W = { engine_addr = key, engine = e, ready_at = os.clock() + 8, merged = {}, fresh = {},
+              hidden = {}, retagged = {} }
         return false
     end
     if os.clock() < W.ready_at then return false end
-    local menu = FindFirstOf("mainMenu_widget_C")
-    if valid(menu) then
-        local ok, shown = pcall(menu.IsInViewport, menu)
-        if ok and shown then return false end
+    if not W.ready then
+        -- The title screen's background world has a live engine too; only
+        -- look for the menu until this world is confirmed to be a game.
+        local menu = FindFirstOf("mainMenu_widget_C")
+        if valid(menu) then
+            local ok, shown = pcall(menu.IsInViewport, menu)
+            if ok and shown then return false end
+        end
+        W.ready = true
     end
     W.pawn = get(e, "playerRef")
     return valid(W.pawn)
@@ -116,11 +127,22 @@ local function bordering_town(r, best)
     return pick
 end
 
--- Everything on `child` except its camp and map decorations moves into
--- `parent`, natively, from the region's own building list (the engine-wide
--- list can hold destroyed buildings, which must never be touched from Lua).
+-- Natively: every building on `child` except its camp and map decorations
+-- joins `parent` (from the region's own list; the engine-wide list can hold
+-- destroyed buildings, which must never be touched from Lua), and `parent`
+-- gets `child`'s tree lists so its woodcutters and foresters see those trees.
 local function move_all(child, parent)
-    parent:SetFamilyHome(MAGIC_MOVE_ALL, child, false)
+    parent:SetFamilyHome(MAGIC_MERGE, child, false)
+end
+
+-- Resource clumps (berries, stone, ...) carry their own Region tag. Loading a
+-- save retags them by position; do the same once when land is merged.
+local function retag_resources(child, parent)
+    local n = 0
+    for _, x in ipairs(FindAllOf("Resource") or {}) do
+        if valid(x) and same(get(x, "Region"), child) then x.Region = parent; n = n + 1 end
+    end
+    return n
 end
 
 -- ---------------------------------------------------------------- merging
@@ -256,6 +278,7 @@ local function sweep()
             if strip_starter(r, info) then W.fresh[key] = nil end -- move on the next sweep
         else
             move_all(r, merged[key])
+            if not W.retagged[key] then retag_resources(r, merged[key]); W.retagged[key] = true end
         end
         signature[#signature + 1] = tostring(key)
     end
@@ -283,12 +306,22 @@ if native_ok then
         end
         return false
     end)
-    RegisterKeyBind(Key.M, { ModifierKey.CONTROL }, function()
-        ExecuteInGameThread(guarded(merge_selected, "merge"))
-    end)
+    local key = Key[cfg.MergeKey or "M"]
+    local mods = {}
+    for _, m in ipairs(cfg.MergeModifiers or { "CONTROL" }) do mods[#mods + 1] = ModifierKey[m] end
+    if key then
+        RegisterKeyBind(key, mods, function() ExecuteInGameThread(guarded(merge_selected, "merge")) end)
+    else
+        log("unknown MergeKey '" .. tostring(cfg.MergeKey) .. "' in config.lua; use the console command")
+    end
     RegisterConsoleCommandHandler("regionmerge", function(_, _, out)
         guarded(merge_selected, "merge")(out)
         return true
     end)
-    log("loaded (Ctrl+M or console 'regionmerge' merges the selected settlement into its neighbour)")
+    local pretty = { CONTROL = "Ctrl", ALT = "Alt", SHIFT = "Shift" }
+    local parts = {}
+    for _, m in ipairs(cfg.MergeModifiers or { "CONTROL" }) do parts[#parts + 1] = pretty[m] or m end
+    parts[#parts + 1] = cfg.MergeKey or "M"
+    local keyname = table.concat(parts, "+")
+    log("loaded (" .. keyname .. " or console 'regionmerge' merges the selected settlement into its neighbour)")
 end

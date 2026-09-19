@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.2 — 2026-09-19
+
+- Forests and resources on merged land now belong to the town. Woodcutters,
+  foresters and other gatherers of the town see the trees on merged land, and
+  new buildings there clear the trees under them. Berry, stone and other
+  resource patches on merged land are retagged to the town when it merges.
+- The merge hotkey can be changed in `config.lua` (`MergeKey`,
+  `MergeModifiers`). Note that the game uses M for the map view, so the
+  default Ctrl+M also toggles the map.
+- Faster: the script no longer scans the game's object table every sweep.
+- Tidier native helper: fewer commands, shared helpers, no dead code.
+
 ## 1.0.1 — 2026-09-19
 
 - Fixed: merged land did not share resources when building. The UI showed the

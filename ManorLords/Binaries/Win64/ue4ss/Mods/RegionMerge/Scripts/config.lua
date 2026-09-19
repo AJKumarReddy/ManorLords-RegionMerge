@@ -12,6 +12,13 @@ return {
     -- Hide the border line between a town and the land merged into it.
     HideInnerBorders = true,
 
+    -- Hotkey that merges the selected settlement into its neighbour. Keys:
+    -- "A".."Z", "NUM_ZERO".."NUM_NINE", "F1".."F12". Modifiers: "CONTROL",
+    -- "ALT", "SHIFT". Note: the game uses M for the map view and reacts to it
+    -- even with modifiers held, so Ctrl+M also toggles the map.
+    MergeKey = "M",
+    MergeModifiers = { "CONTROL" },
+
     -- Seconds between sweeps. Buildings are normally moved by the native helper
     -- the moment they appear; the sweep is the fallback and does auto-merging.
     SweepSeconds = 2,

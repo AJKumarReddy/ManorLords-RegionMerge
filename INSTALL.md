@@ -34,7 +34,7 @@ RegionMerge is a UE4SS mod. It was tested with **UE4SS
 
 ## Step 2 — install RegionMerge
 
-**Manual:** extract `RegionMerge-1.0.1.zip` into your **game folder** and let
+**Manual:** extract `RegionMerge-1.0.2.zip` into your **game folder** and let
 it merge folders. The result must be:
 
 ```
@@ -114,6 +114,6 @@ When reporting a bug, attach:
 - Placing buildings on merged land by hand was not part of the automated tests
   (they cannot click). The engine side (region lookups, construction
   registration, shared stock) is tested.
-- Natural resources (forests, deposits, berry bushes) keep their original
-  region tag. If a gatherer on merged land ignores nearby resources, please
-  report it.
+- The default merge hotkey Ctrl+M also toggles the game's map view (the game
+  reacts to M even with Ctrl held). Change `MergeKey` in `config.lua` if that
+  bothers you.

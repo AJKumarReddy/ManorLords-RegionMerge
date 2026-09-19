@@ -1,10 +1,18 @@
-// RegionMergeNative: tiny in-process helper for the RegionMerge Lua mod.
+// RegionMergeNative: in-process helper for the RegionMerge Lua mod.
 //
 // Lua loads this DLL with package.loadlib(path, "*"). On attach it verifies the
-// exact Manor Lords build by comparing code bytes, then redirects the exec thunk
-// of ARegion::SetFamilyHome. Calls with a magic familyID are handled here; every
-// other call runs the original game code unchanged. Status is written to
-// RegionMergeNative.status next to the DLL so Lua can see whether it is active.
+// exact Manor Lords build by comparing code bytes, then:
+//  - hooks getRegionByPos so the player's merged land answers with its town
+//    (placement costs, construction, workers, HUD); the save loader's region
+//    restore keeps the raw lookup;
+//  - redirects SetRegion (save load, building spawn) and hooks
+//    findRegionAndOwner so buildings on merged land join the town, while the
+//    outpost's camp and map decorations stay on their own land;
+//  - keeps each region's saved Center inside the region;
+//  - redirects the exec thunk of ARegion::SetFamilyHome: calls with a magic
+//    familyID are commands from Lua, every other call runs the game's code.
+// Status is written to RegionMergeNative.status so Lua can see whether it is
+// active; notable events go to RegionMergeNative.log.
 //
 // Offsets are for Manor Lords 0.8.104 (ManorLords-Win64-Shipping.exe) and were
 // derived in research/re (see research/README.md). On any mismatch nothing is
@@ -48,10 +56,11 @@
 #define OFF_REG_OWNER      0x350 // ARegion::ownerPawn
 #define OFF_REG_BUILDINGS  0x658 // ARegion native TArray<ASMBuildingMaster*>
 #define OFF_REG_RESIDENTS  0x368 // ARegion::residents (TArray<ASMUnit*>)
+#define OFF_REG_FOLIAGE    0xf70 // ARegion::regionalFoliage (TArray<UInstancedStaticMeshComponent*>)
 #define OFF_UNIT_REGION    0x328 // ASMUnit native ARegion*; the save files units under it
 
 #define MAGIC_BASE (-777700) // familyID = MAGIC_BASE - op
-enum { OP_MOVE_BUILDING = 1, OP_MOVE_RESIDENT = 3, OP_MOVE_REGION_BUILDINGS = 4 };
+enum { OP_MOVE_RESIDENT = 1, OP_MERGE_LAND = 2 };
 
 typedef struct { void *data; int32_t num, max; } TArrayRaw;
 typedef void (*ExecFn)(void *ctx, void *stack, void *result);
@@ -100,6 +109,14 @@ static int array_contains(TArrayRaw *a, void *p) {
     return 0;
 }
 
+// Append to a game-owned pointer array, growing it with the game's allocator.
+static void array_append(TArrayRaw *a, void *p) {
+    int32_t old = a->num;
+    a->num = old + 1;
+    if (a->num > a->max) g_grow8(a, old);
+    ((void **)a->data)[old] = p;
+}
+
 // Move a building from its current region into `to`, keeping stock caches exact.
 static int move_building(uint8_t *to, uint8_t *bld) {
     if (!to || !bld) return 0;
@@ -136,10 +153,7 @@ static int move_resident(uint8_t *to, uint8_t *unit) {
     if (i == src->num) return 0;
     memmove(&d[i], &d[i + 1], (size_t)(src->num - i - 1) * sizeof(void *));
     src->num--;
-    int32_t old = dst->num;
-    dst->num = old + 1;
-    if (dst->num > dst->max) g_grow8(dst, old);
-    ((void **)dst->data)[old] = unit;
+    array_append(dst, unit);
     *(uint8_t **)(unit + OFF_UNIT_REGION) = to;
     return 1;
 }
@@ -168,24 +182,24 @@ static int actor_location(uint8_t *actor, Vec3 *out) {
     return 1;
 }
 
-// Buildings get their region when they are placed and again on every load,
-// by position. On merged land, register them with the parent town instead so
-// families, jobs and stock stay in one settlement across saves.
+// Buildings placed without a region get one by position. Position lookups
+// already answer with the town on merged land; the settlement camp and map
+// decorations must stay on their own land, so they get the raw region.
+static int is_anchor(uint8_t *bld) {
+    return *(int32_t *)(bld + OFF_BLD_TYPE) == BTYPE_SETTLEMENT_CAMP || bld[OFF_BLD_FUNCTION] == BFUNC_DECORATION;
+}
+
+static uint8_t *raw_region_of(uint8_t *bld) {
+    uint8_t *eng = *(uint8_t **)(bld + OFF_BLD_MASTER);
+    Vec3 pos;
+    if (!eng || !actor_location(bld, &pos)) return NULL;
+    return g_region_by_pos(eng, &pos, 0);
+}
+
 static void hooked_find_region(uint8_t *bld, uint8_t *set_region) {
-    if (bld && !set_region && !*(void **)(bld + OFF_BLD_REGION) &&
-        *(int32_t *)(bld + OFF_BLD_TYPE) != BTYPE_SETTLEMENT_CAMP &&
-        bld[OFF_BLD_FUNCTION] != BFUNC_DECORATION) {
-        uint8_t *eng = *(uint8_t **)(bld + OFF_BLD_MASTER);
-        Vec3 pos;
-        if (eng && actor_location(bld, &pos)) {
-            uint8_t *here = g_region_by_pos(eng, &pos, 0);
-            uint8_t *root = merge_root(here);
-            if (root) {
-                set_region = root;
-                nlog("register bld %p type %d on merged land %p -> town %p", (void *)bld,
-                     *(int32_t *)(bld + OFF_BLD_TYPE), (void *)here, (void *)root);
-            }
-        }
+    if (bld && !set_region && !*(void **)(bld + OFF_BLD_REGION) && is_anchor(bld)) {
+        uint8_t *raw = raw_region_of(bld);
+        if (raw) set_region = raw;
     }
     g_find_orig(bld, set_region);
 }
@@ -205,17 +219,10 @@ static void *hooked_region_by_pos(void *engine, const Vec3 *pos, uint8_t skip_bo
 // at the building's position through SetRegion, then registers the building
 // with it. On merged land, hand the parent town to SetRegion instead.
 static void my_set_region(uint8_t *bld, uint8_t *region) {
-    int anchor = bld && (*(int32_t *)(bld + OFF_BLD_TYPE) == BTYPE_SETTLEMENT_CAMP ||
-                         bld[OFF_BLD_FUNCTION] == BFUNC_DECORATION);
-    if (bld && anchor) { // stays on its own land, not the town the lookup now reports
-        uint8_t *eng = *(uint8_t **)(bld + OFF_BLD_MASTER);
-        Vec3 pos;
-        if (eng && actor_location(bld, &pos)) {
-            uint8_t *raw = g_region_by_pos(eng, &pos, 0);
-            if (raw) region = raw;
-        }
-    }
-    if (bld && region && !anchor) {
+    if (bld && is_anchor(bld)) {
+        uint8_t *raw = raw_region_of(bld);
+        if (raw) region = raw;
+    } else if (bld && region) {
         uint8_t *root = merge_root(region);
         if (root) {
             nlog("load/spawn bld %p type %d on merged land %p -> town %p", (void *)bld,
@@ -282,13 +289,31 @@ static int move_region_buildings(uint8_t *to, uint8_t *from) {
     int moved = 0;
     for (int32_t i = 0; i < n; i++) {
         uint8_t *b = snap[i];
-        if (!b || *(int32_t *)(b + OFF_BLD_TYPE) == BTYPE_SETTLEMENT_CAMP || b[OFF_BLD_FUNCTION] == BFUNC_DECORATION)
-            continue;
+        if (!b || is_anchor(b)) continue;
         if (*(uint8_t **)(b + OFF_BLD_REGION) == from) moved += move_building(to, b);
     }
     HeapFree(GetProcessHeap(), 0, snap);
     if (moved) nlog("moved %d buildings %p -> %p", moved, (void *)from, (void *)to);
     return moved;
+}
+
+// Trees live in per-region foliage components, and buildings, workers and
+// position queries search the list of the region they belong to. Append the
+// merged land's components to the town's list (the land keeps its own list, so
+// code that indexes it by species or divides by its size is unaffected).
+static int share_foliage(uint8_t *to, uint8_t *from) {
+    if (!to || !from || to == from) return 0;
+    TArrayRaw *src = (TArrayRaw *)(from + OFF_REG_FOLIAGE);
+    TArrayRaw *dst = (TArrayRaw *)(to + OFF_REG_FOLIAGE);
+    int added = 0;
+    for (int32_t i = 0; i < src->num; i++) {
+        void *c = ((void **)src->data)[i];
+        if (!c || array_contains(dst, c)) continue;
+        array_append(dst, c);
+        added++;
+    }
+    if (added) nlog("shared %d foliage components %p -> %p", added, (void *)from, (void *)to);
+    return added;
 }
 
 static void hooked_exec(void *ctx, void *stack, void *result) {
@@ -301,9 +326,12 @@ static void hooked_exec(void *ctx, void *stack, void *result) {
         if (family <= MAGIC_BASE && family > MAGIC_BASE - 16) {
             int op = MAGIC_BASE - family;
             void *bld = *(void **)(locals + 8);
-            if (op == OP_MOVE_BUILDING) move_building((uint8_t *)ctx, (uint8_t *)bld);
-            else if (op == OP_MOVE_RESIDENT) move_resident((uint8_t *)ctx, (uint8_t *)bld);
-            else if (op == OP_MOVE_REGION_BUILDINGS) move_region_buildings((uint8_t *)ctx, (uint8_t *)bld);
+            if (op == OP_MOVE_RESIDENT) {
+                move_resident((uint8_t *)ctx, (uint8_t *)bld);
+            } else if (op == OP_MERGE_LAND) { // bld is the merged region here
+                move_region_buildings((uint8_t *)ctx, (uint8_t *)bld);
+                share_foliage((uint8_t *)ctx, (uint8_t *)bld);
+            }
             return;
         }
     }
