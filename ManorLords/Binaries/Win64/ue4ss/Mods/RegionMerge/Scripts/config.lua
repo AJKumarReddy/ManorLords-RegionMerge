@@ -13,11 +13,13 @@ return {
     HideInnerBorders = true,
 
     -- Hotkey that merges the selected settlement into its neighbour. Keys:
-    -- "A".."Z", "NUM_ZERO".."NUM_NINE", "F1".."F12". Modifiers: "CONTROL",
-    -- "ALT", "SHIFT". Note: the game uses M for the map view and reacts to it
-    -- even with modifiers held, so Ctrl+M also toggles the map.
-    MergeKey = "M",
-    MergeModifiers = { "CONTROL" },
+    -- "A".."Z", "PAGE_UP", "PAGE_DOWN", "HOME", "NUM_ZERO".."NUM_NINE",
+    -- "F1".."F12". Modifiers: "CONTROL", "ALT", "SHIFT".
+    -- The default, Ctrl+Alt+Page Up, is used by nothing in the game (0.8.104)
+    -- or the common UE4SS mods. Avoid letters: the game reacts to its own
+    -- letter keys even with Ctrl/Alt held (for example M opens the map).
+    MergeKey = "PAGE_UP",
+    MergeModifiers = { "CONTROL", "ALT" },
 
     -- Seconds between sweeps. Buildings are normally moved by the native helper
     -- the moment they appear; the sweep is the fallback and does auto-merging.

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.3 — 2026-09-19
+
+- The merge hotkey is now **Ctrl+Alt+PageUp**. Ctrl+M also toggled the game's map view
+  (the game reacts to its letter keys even with Ctrl held); Page Up is not
+  used by the game or the common UE4SS mods. Change it in `config.lua`
+  (`MergeKey`, `MergeModifiers`).
+
 ## 1.0.2 — 2026-09-19
 
 - Forests and resources on merged land now belong to the town. Woodcutters,

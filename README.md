@@ -5,7 +5,7 @@ separate settlement with its own villagers, storage and treasury. You can also
 fold an existing settlement into a neighbouring one, and combine as many
 regions as you like into a single town.
 
-- **Version:** 1.0.2
+- **Version:** 1.0.3
 - **Game:** Manor Lords **0.8.104** (Steam, Windows)
 - **Requires:** [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS)
 
@@ -15,7 +15,7 @@ regions as you like into a single town.
   already merged into it) joins the town automatically. Build there as if it
   were your home region.
 - **Merge existing settlements:** select one of your settlements that borders
-  another and press **Ctrl+M**. Families, houses, workplaces, goods and
+  another and press **Ctrl+Alt+PageUp**. Families, houses, workplaces, goods and
   treasury move into the neighbouring town.
 - **Shared everything:** one population, one job pool, one storage, one
   treasury, one construction queue. Forests and resource patches on merged
@@ -32,7 +32,7 @@ regions as you like into a single town.
 
 1. Install **UE4SS** into `ManorLords\Binaries\Win64`. See [INSTALL.md](INSTALL.md)
    for the tested version and settings.
-2. Download `RegionMerge-1.0.2.zip` and **extract it into your Manor Lords
+2. Download `RegionMerge-1.0.3.zip` and **extract it into your Manor Lords
    game folder**, the one that contains `ManorLords.exe`. Let it merge
    folders. The mod ends up in:
    ```
@@ -49,7 +49,7 @@ Full step-by-step guide, checks, uninstalling and troubleshooting:
 | Action | How |
 |---|---|
 | Merge new land | Claim a region that borders your town. It merges within a few seconds. |
-| Merge a settlement | Select one of your settlements that borders another, press **Ctrl+M** (or console: `regionmerge`). |
+| Merge a settlement | Select one of your settlements that borders another, press **Ctrl+Alt+PageUp** (or console: `regionmerge`). |
 | Settings | Edit `ue4ss\Mods\RegionMerge\Scripts\config.lua`, then restart the game. |
 
 | Setting | Default | Meaning |
@@ -57,7 +57,7 @@ Full step-by-step guide, checks, uninstalling and troubleshooting:
 | `AutoMergeNewClaims` | `true` | Merge newly claimed neighbouring land automatically. |
 | `StripStarterSupplies` | `true` | Remove the free starter goods and wealth that settling gives merged land. |
 | `HideInnerBorders` | `true` | Hide the border line inside a merged town. |
-| `MergeKey`, `MergeModifiers` | `"M"`, `{ "CONTROL" }` | Hotkey for merging a settlement. The game also uses M for the map view. |
+| `MergeKey`, `MergeModifiers` | `"PAGE_UP"`, `{ "CONTROL", "ALT" }` | Hotkey for merging a settlement. Avoid letter keys: the game reacts to its own letters even with Ctrl/Alt held. |
 | `SweepSeconds` | `2` | How often the mod checks for new claims. |
 
 ## Important

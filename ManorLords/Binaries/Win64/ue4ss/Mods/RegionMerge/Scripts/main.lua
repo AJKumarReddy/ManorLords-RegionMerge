@@ -306,9 +306,11 @@ if native_ok then
         end
         return false
     end)
-    local key = Key[cfg.MergeKey or "M"]
+    local merge_key = cfg.MergeKey or "PAGE_UP"
+    local merge_mods = cfg.MergeModifiers or { "CONTROL", "ALT" }
+    local key = Key[merge_key]
     local mods = {}
-    for _, m in ipairs(cfg.MergeModifiers or { "CONTROL" }) do mods[#mods + 1] = ModifierKey[m] end
+    for _, m in ipairs(merge_mods) do mods[#mods + 1] = ModifierKey[m] end
     if key then
         RegisterKeyBind(key, mods, function() ExecuteInGameThread(guarded(merge_selected, "merge")) end)
     else
@@ -318,10 +320,11 @@ if native_ok then
         guarded(merge_selected, "merge")(out)
         return true
     end)
-    local pretty = { CONTROL = "Ctrl", ALT = "Alt", SHIFT = "Shift" }
+    local pretty = { CONTROL = "Ctrl", ALT = "Alt", SHIFT = "Shift", PAGE_UP = "PageUp",
+                     PAGE_DOWN = "PageDown", HOME = "Home" }
     local parts = {}
-    for _, m in ipairs(cfg.MergeModifiers or { "CONTROL" }) do parts[#parts + 1] = pretty[m] or m end
-    parts[#parts + 1] = cfg.MergeKey or "M"
+    for _, m in ipairs(merge_mods) do parts[#parts + 1] = pretty[m] or m end
+    parts[#parts + 1] = pretty[merge_key] or merge_key
     local keyname = table.concat(parts, "+")
     log("loaded (" .. keyname .. " or console 'regionmerge' merges the selected settlement into its neighbour)")
 end

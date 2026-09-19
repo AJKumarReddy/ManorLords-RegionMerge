@@ -34,7 +34,7 @@ RegionMerge is a UE4SS mod. It was tested with **UE4SS
 
 ## Step 2 — install RegionMerge
 
-**Manual:** extract `RegionMerge-1.0.2.zip` into your **game folder** and let
+**Manual:** extract `RegionMerge-1.0.3.zip` into your **game folder** and let
 it merge folders. The result must be:
 
 ```
@@ -63,7 +63,7 @@ Start the game and open
 
 ```
 [RegionMerge] native helper active (OK 0.8.104)
-[RegionMerge] loaded (Ctrl+M or console 'regionmerge' merges the selected settlement into its neighbour)
+[RegionMerge] loaded (Ctrl+Alt+PageUp or console 'regionmerge' merges the selected settlement into its neighbour)
 ```
 
 If it says `native helper NOT active`, the mod is off (usually a different game
@@ -75,7 +75,7 @@ version). Your game is unchanged.
   already merged into one. A few seconds later it becomes part of that
   settlement. Build there as usual.
 - **Existing settlement:** select one of your settlements that borders another
-  and press **Ctrl+M**, or type `regionmerge` in the console if you have one.
+  and press **Ctrl+Alt+PageUp**, or type `regionmerge` in the console if you have one.
   It merges into the bordering settlement with the largest population.
 - Merged land keeps its own name on the map. Only the border line is hidden.
 - Settings: `RegionMerge\Scripts\config.lua` (restart the game after
@@ -97,7 +97,7 @@ version). Your game is unchanged.
 |---|---|
 | No `[RegionMerge]` lines in the log | Check the folder layout above, and that `enabled.txt` exists (or the `mods.txt` line). |
 | `native helper NOT active` | Your game is not 0.8.104, or the DLL is blocked (see *Unblock* above). |
-| Ctrl+M does nothing | Select a settlement that borders another of **your** settlements. The log explains why nothing happened. |
+| Ctrl+Alt+PageUp does nothing | Select a settlement that borders another of **your** settlements. The log explains why nothing happened. |
 | Crash on load | Make sure UE4SS is the tested version, then report the bug with the files below. |
 
 When reporting a bug, attach:
@@ -114,6 +114,3 @@ When reporting a bug, attach:
 - Placing buildings on merged land by hand was not part of the automated tests
   (they cannot click). The engine side (region lookups, construction
   registration, shared stock) is tested.
-- The default merge hotkey Ctrl+M also toggles the game's map view (the game
-  reacts to M even with Ctrl held). Change `MergeKey` in `config.lua` if that
-  bothers you.
