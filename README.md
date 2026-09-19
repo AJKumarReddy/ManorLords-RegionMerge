@@ -5,7 +5,7 @@ separate settlement with its own villagers, storage and treasury. You can also
 fold an existing settlement into a neighbouring one, and combine as many
 regions as you like into a single town.
 
-- **Version:** 1.0.0
+- **Version:** 1.0.1
 - **Game:** Manor Lords **0.8.104** (Steam, Windows)
 - **Requires:** [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS)
 
@@ -31,7 +31,7 @@ regions as you like into a single town.
 
 1. Install **UE4SS** into `ManorLords\Binaries\Win64`. See [INSTALL.md](INSTALL.md)
    for the tested version and settings.
-2. Download `RegionMerge-1.0.0.zip` and **extract it into your Manor Lords
+2. Download `RegionMerge-1.0.1.zip` and **extract it into your Manor Lords
    game folder**, the one that contains `ManorLords.exe`. Let it merge
    folders. The mod ends up in:
    ```
@@ -73,10 +73,12 @@ has two parts:
 
 - **`RegionMergeNative.dll`**, a small helper written in C. Before it changes
   anything it checks the game's code against 0.8.104. If that check passes, it
-  re-registers buildings, goods and villagers with the parent town. It also
-  makes the game do the same when it loads a save or spawns a building.
-- **`Scripts/main.lua`**, a UE4SS Lua script. It detects claims, runs merges,
-  keeps the HUD on the parent town and hides inner borders. Merged land is
+  makes the game's position lookup treat merged land as the parent town, which
+  covers placement costs, construction, builders, storage and the HUD. It also
+  re-registers buildings, goods and villagers with the town, including when a
+  save loads.
+- **`Scripts/main.lua`**, a UE4SS Lua script. It detects claims, runs merges and
+  hides inner borders. Merged land is
   kept as a native *outpost* of its town, so the game saves the link itself.
 
 The full source of the helper is in [`source/`](source); you can build it

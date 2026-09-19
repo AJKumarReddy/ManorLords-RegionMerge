@@ -26,6 +26,7 @@
 #define RVA_SET_REGION           0x4c9a680 // ASMBuildingMaster::SetRegion (mov [rcx+2c8],rdx; ret)
 #define RVA_CALL_SET_REGION_LOAD 0x4c169a4 // save loader: SetRegion(bld, getRegionByPos(savedPos))
 #define RVA_CALL_SET_REGION_NEW  0x4b64e9c // building spawn: SetRegion(bld, region)
+#define RVA_CALL_BY_POS_RESTORE  0x4c14cfb // save loader: live region for each saved region Center
 #define RVA_TARRAY_GROW8         0x10b8e60 // TArray<8-byte>::ResizeGrow(arr, oldNum), called after Num++
 
 #define OFF_FRAME_LOCALS   0x28  // FFrame::Locals
@@ -50,7 +51,7 @@
 #define OFF_UNIT_REGION    0x328 // ASMUnit native ARegion*; the save files units under it
 
 #define MAGIC_BASE (-777700) // familyID = MAGIC_BASE - op
-enum { OP_MOVE_BUILDING = 1, OP_MOVE_RESIDENT = 3 };
+enum { OP_MOVE_BUILDING = 1, OP_MOVE_RESIDENT = 3, OP_MOVE_REGION_BUILDINGS = 4 };
 
 typedef struct { void *data; int32_t num, max; } TArrayRaw;
 typedef void (*ExecFn)(void *ctx, void *stack, void *result);
@@ -189,12 +190,32 @@ static void hooked_find_region(uint8_t *bld, uint8_t *set_region) {
     g_find_orig(bld, set_region);
 }
 
+// Every position lookup in the game goes through getRegionByPos: building
+// placement and its cost check, construction, workers, the HUD. On the
+// player's merged land it answers with the parent town, so the land really is
+// part of that town. The raw answer (g_region_by_pos) is kept for the save
+// loader's region restore and for this helper's own checks.
+static void *hooked_region_by_pos(void *engine, const Vec3 *pos, uint8_t skip_bounds) {
+    uint8_t *r = g_region_by_pos(engine, pos, skip_bounds);
+    uint8_t *root = merge_root(r);
+    return root ? root : r;
+}
+
 // Loading a save (and spawning a finished building) assigns the region found
 // at the building's position through SetRegion, then registers the building
 // with it. On merged land, hand the parent town to SetRegion instead.
 static void my_set_region(uint8_t *bld, uint8_t *region) {
-    if (bld && region && *(int32_t *)(bld + OFF_BLD_TYPE) != BTYPE_SETTLEMENT_CAMP &&
-        bld[OFF_BLD_FUNCTION] != BFUNC_DECORATION) {
+    int anchor = bld && (*(int32_t *)(bld + OFF_BLD_TYPE) == BTYPE_SETTLEMENT_CAMP ||
+                         bld[OFF_BLD_FUNCTION] == BFUNC_DECORATION);
+    if (bld && anchor) { // stays on its own land, not the town the lookup now reports
+        uint8_t *eng = *(uint8_t **)(bld + OFF_BLD_MASTER);
+        Vec3 pos;
+        if (eng && actor_location(bld, &pos)) {
+            uint8_t *raw = g_region_by_pos(eng, &pos, 0);
+            if (raw) region = raw;
+        }
+    }
+    if (bld && region && !anchor) {
         uint8_t *root = merge_root(region);
         if (root) {
             nlog("load/spawn bld %p type %d on merged land %p -> town %p", (void *)bld,
@@ -247,6 +268,29 @@ static Vec3 *hooked_center(uint8_t *region, Vec3 *out) {
     return res;
 }
 
+// Move every building of region `from` into `to`, except the settlement camp
+// (the outpost's anchor) and map decorations. Walks a snapshot of the region's
+// own native list, which the game keeps free of destroyed buildings.
+static int move_region_buildings(uint8_t *to, uint8_t *from) {
+    if (!to || !from || to == from) return 0;
+    TArrayRaw *list = (TArrayRaw *)(from + OFF_REG_BUILDINGS);
+    int32_t n = list->num;
+    if (n <= 0) return 0;
+    void **snap = HeapAlloc(GetProcessHeap(), 0, (size_t)n * sizeof(void *));
+    if (!snap) return 0;
+    memcpy(snap, list->data, (size_t)n * sizeof(void *));
+    int moved = 0;
+    for (int32_t i = 0; i < n; i++) {
+        uint8_t *b = snap[i];
+        if (!b || *(int32_t *)(b + OFF_BLD_TYPE) == BTYPE_SETTLEMENT_CAMP || b[OFF_BLD_FUNCTION] == BFUNC_DECORATION)
+            continue;
+        if (*(uint8_t **)(b + OFF_BLD_REGION) == from) moved += move_building(to, b);
+    }
+    HeapFree(GetProcessHeap(), 0, snap);
+    if (moved) nlog("moved %d buildings %p -> %p", moved, (void *)from, (void *)to);
+    return moved;
+}
+
 static void hooked_exec(void *ctx, void *stack, void *result) {
     uint8_t *locals = *(uint8_t **)((uint8_t *)stack + OFF_FRAME_LOCALS);
     void *code = *(void **)((uint8_t *)stack + 0x20);
@@ -259,6 +303,7 @@ static void hooked_exec(void *ctx, void *stack, void *result) {
             void *bld = *(void **)(locals + 8);
             if (op == OP_MOVE_BUILDING) move_building((uint8_t *)ctx, (uint8_t *)bld);
             else if (op == OP_MOVE_RESIDENT) move_resident((uint8_t *)ctx, (uint8_t *)bld);
+            else if (op == OP_MOVE_REGION_BUILDINGS) move_region_buildings((uint8_t *)ctx, (uint8_t *)bld);
             return;
         }
     }
@@ -316,14 +361,21 @@ static int install(void) {
     g_stock = (StockUpdateFn)stk;
     g_grow8 = (GrowFn)grow;
 
-    g_region_by_pos = (RegionByPosFn)(g_base + RVA_REGION_BY_POS);
+    uint8_t *restore_site = g_base + RVA_CALL_BY_POS_RESTORE;
+    if (restore_site[0] != 0xE8 || restore_site + 5 + *(int32_t *)(restore_site + 1) != g_base + RVA_REGION_BY_POS) {
+        write_status("DISABLED game build mismatch (region restore call site)");
+        return 0;
+    }
+    g_region_by_pos = (RegionByPosFn)hook_fn(g_base + RVA_REGION_BY_POS, (void *)&hooked_region_by_pos, 15);
+    if (!g_region_by_pos) { write_status("DISABLED hook install failed"); return 0; }
     g_original = (ExecFn)hook_fn(exec, (void *)&hooked_exec, 15);
     g_find_orig = (FindRegionFn)hook_fn(g_base + RVA_FIND_REGION, (void *)&hooked_find_region, 16);
     g_center_orig = (CenterFn)hook_fn(g_base + RVA_REGION_CENTER, (void *)&hooked_center, 20);
     if (!g_original || !g_find_orig || !g_center_orig) { write_status("DISABLED hook install failed"); return 0; }
     uint8_t *setr = g_base + RVA_SET_REGION;
     if (!redirect_call(g_base + RVA_CALL_SET_REGION_LOAD, setr, (void *)&my_set_region) ||
-        !redirect_call(g_base + RVA_CALL_SET_REGION_NEW, setr, (void *)&my_set_region)) {
+        !redirect_call(g_base + RVA_CALL_SET_REGION_NEW, setr, (void *)&my_set_region) ||
+        !redirect_call(restore_site, g_base + RVA_REGION_BY_POS, (void *)g_region_by_pos)) {
         write_status("DISABLED SetRegion call sites not found");
         return 0;
     }

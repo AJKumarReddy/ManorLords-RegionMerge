@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.1 — 2026-09-19
+
+- Fixed: merged land did not share resources when building. The UI showed the
+  town's goods, but placing or constructing a building on merged land checked
+  the empty outpost's stock. The game's own position lookup now treats merged
+  land as part of the town, so placement costs, construction, builders and
+  storage all use the town.
+- Fixed a rare crash a few seconds after saving, caused by the script touching
+  buildings the game had already deleted. Building moves now happen entirely in
+  the native helper; the script no longer reads the game's building list.
+- The HUD follows the town natively, so the script's UI redirect was removed.
+
 ## 1.0.0 — 2026-09-19
 
 First release, for Manor Lords 0.8.104.

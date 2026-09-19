@@ -1,10 +1,10 @@
 === Nexus page fields ===
 Name:              RegionMerge - One Town Across Many Regions
-Version:           1.0.0
+Version:           1.0.1
 Category:          Gameplay
 Summary (short):   Claimed land becomes part of the town it borders: one population, storage, treasury and job pool across as many regions as you like. Merge existing settlements with Ctrl+M. For game version 0.8.104 (requires UE4SS).
 Requirements:      UE4SS (https://github.com/UE4SS-RE/RE-UE4SS)
-Main file:         RegionMerge-1.0.0.zip  (extract into the game folder)
+Main file:         RegionMerge-1.0.1.zip  (extract into the game folder)
 
 === Description (BBCode, paste below) ===
 
@@ -32,7 +32,7 @@ Claim land next to your town and it [b]becomes part of that town[/b], instead of
 [size=4][b]Installation[/b][/size]
 [list=1]
 [*]Install UE4SS into [i]ManorLords\Binaries\Win64[/i] (extract the UE4SS zip there, not the zDEV one). In [i]ue4ss\UE4SS-settings.ini[/i] set [i]bUseUObjectArrayCache = false[/i] and [i]UseModuleOffsets = 1[/i].
-[*]Extract [b]RegionMerge-1.0.0.zip[/b] into your [b]game folder[/b] (the folder with ManorLords.exe) and let it merge folders. The mod ends up in [i]ManorLords\Binaries\Win64\ue4ss\Mods\RegionMerge[/i].
+[*]Extract [b]RegionMerge-1.0.1.zip[/b] into your [b]game folder[/b] (the folder with ManorLords.exe) and let it merge folders. The mod ends up in [i]ManorLords\Binaries\Win64\ue4ss\Mods\RegionMerge[/i].
 [*]Start the game. [i]ue4ss\UE4SS.log[/i] should show [i][RegionMerge] native helper active (OK 0.8.104)[/i].
 [/list]
 If Windows blocks the DLL: right-click [i]RegionMergeNative.dll[/i] > Properties > tick [i]Unblock[/i].
@@ -58,7 +58,7 @@ Delete [i]ue4ss\Mods\RegionMerge[/i] - only for saves that never merged anything
 Works alongside UE4SS mods that don't change regions, settlements or claiming. Mods that do may conflict.
 
 [size=4][b]How it works / source[/b][/size]
-Region membership lives in the game's native code, out of reach of Lua, so the mod ships a small C helper ([i]RegionMergeNative.dll[/i]). The helper checks the game's code before it changes anything. It re-registers buildings, goods and villagers with the parent town, and makes the game do the same when it loads a save. A Lua script handles claims, merges and the UI. There is no network access. Full source and build instructions are on GitHub.
+Region membership lives in the game's native code, out of reach of Lua, so the mod ships a small C helper ([i]RegionMergeNative.dll[/i]). The helper checks the game's code before it changes anything. It makes the game treat merged land as the parent town (placement costs, construction, builders, storage, HUD) and re-registers buildings, goods and villagers with the town, including when a save loads. A Lua script handles claims and merges. There is no network access. Full source and build instructions are on GitHub.
 
 [size=4][b]Bug reports[/b][/size]
 Please attach [i]ue4ss\UE4SS.log[/i], [i]ue4ss\Mods\RegionMerge\RegionMergeNative.log[/i] and the newest folder in [i]%LOCALAPPDATA%\ManorLords\Saved\Crashes[/i].

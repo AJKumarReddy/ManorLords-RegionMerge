@@ -1,16 +1,15 @@
 -- RegionMerge: claimed land becomes part of the settlement it borders.
 --
 -- A merged region is kept as a native Outpost of its parent town (so the game
--- saves the link itself). RegionMergeNative.dll registers every building on
--- that land with the parent town: on load, on spawn, and when this script
--- sweeps. The parent therefore owns those buildings for jobs, stock,
--- construction and UI; the outpost stays an empty shell.
+-- saves the link itself). RegionMergeNative.dll makes the game treat that land
+-- as the town: position lookups answer with the town (placement, building
+-- costs, construction, workers, HUD), and buildings there are registered with
+-- the town on placement, spawn and load. This script decides what to merge
+-- and moves what an existing settlement already owns.
 local PREFIX = "[RegionMerge] "
-local MAGIC_MOVE = -777701     -- native op 1: move building into Context region
 local MAGIC_RESIDENT = -777703 -- native op 3: move resident unit into Context region
+local MAGIC_MOVE_ALL = -777704 -- native op 4: move a region's buildings into Context region
 local OUTPOST = 5              -- ESettlementType::Outpost
-local CAMP = 30                -- settlement camp: stays in the outpost as its anchor
-local DECORATION = 13          -- EBuildingFunction of map features: never moved
 
 local function log(msg) print(PREFIX .. msg .. "\n") end
 
@@ -117,26 +116,11 @@ local function bordering_town(r, best)
     return pick
 end
 
--- region address -> movable buildings in it (one pass over all buildings).
--- Same rule as the native load/spawn hook: everything on merged land except
--- the camp and map decorations.
-local function movable_by_region(wanted)
-    local out = {}
-    each(get(W.engine, "buildingArr"), function(b)
-        local key = addr(get(b, "Region"))
-        if key and wanted[key] and get(get(b, "Data"), "bType") ~= CAMP
-            and get(b, "buildingFunction") ~= DECORATION then
-            local list = out[key] or {}
-            list[#list + 1] = b
-            out[key] = list
-        end
-    end)
-    return out
-end
-
-local function move_all(list, parent)
-    for _, b in ipairs(list or {}) do parent:SetFamilyHome(MAGIC_MOVE, b, false) end
-    return #(list or {})
+-- Everything on `child` except its camp and map decorations moves into
+-- `parent`, natively, from the region's own building list (the engine-wide
+-- list can hold destroyed buildings, which must never be touched from Lua).
+local function move_all(child, parent)
+    parent:SetFamilyHome(MAGIC_MOVE_ALL, child, false)
 end
 
 -- ---------------------------------------------------------------- merging
@@ -152,25 +136,20 @@ local function merge_new_claim(r)
     log("merged new claim " .. str(get(r, "regionName")) .. " into " .. str(get(parent, "regionName")))
 end
 
--- Settling hands out starter goods and wealth; merged land gets neither. Goods
--- are totalled first and then consumed from the region as a whole: emptied
--- settler tents are deleted by the game, so no building is touched afterwards.
+-- Settling hands out starter goods and wealth; merged land gets neither. The
+-- goods are removed through the region's stock, so no building is touched
+-- (the game deletes settler tents once they are empty).
 local function strip_starter(child, info)
     info.tries = info.tries + 1
     child.regionalWealth = info.wealth
-    local totals = {}
-    each(get(W.engine, "buildingArr"), function(b)
-        if same(get(b, "Region"), child) then
-            local inv = get(b, "Inventory")
-            for j = 1, len(inv) do
-                local g = inv[j]
-                local t, n = get(g, "Type"), get(g, "amt")
-                if t and n and n > 0 then totals[t] = (totals[t] or 0) + n end
-            end
+    local any = false
+    for t = 0, 260 do
+        local ok, n = pcall(child.getStockOfGood, child, t, false, false)
+        if ok and type(n) == "number" and n > 0 then
+            child:consumeGood(t, n, CreateInvalidObject(), false, false, false)
+            any = true
         end
-    end)
-    local any = next(totals) ~= nil
-    for t, n in pairs(totals) do child:consumeGood(t, n, CreateInvalidObject(), false, false, false) end
+    end
     return any or info.tries > 5 -- done (settlement buildings can take a moment to spawn)
 end
 
@@ -192,7 +171,9 @@ local function merge_town(child, parent)
         if valid(p.home) then child:SetFamilyHome(i - 1, CreateInvalidObject(), true) end
     end
     -- 2. buildings (their stock moves with them)
-    local moved = move_all(movable_by_region({ [addr(child)] = true })[addr(child)], parent)
+    local before = len(parent:GetBuildings())
+    move_all(child, parent)
+    local moved = len(parent:GetBuildings()) - before
     -- 3. families: recreate in the parent, then drop from the old town
     for i = #plan, 1, -1 do
         local p = plan[i]
@@ -235,7 +216,7 @@ local function merge_selected(out)
     if out then out:Log("RegionMerge: " .. msg) end
 end
 
--- Hide the border line between a town and land merged into it (once each).
+-- Hide the border line between a town and land merged into it.
 -- Regions are never renamed: saves match region data by name, and a duplicate
 -- name mixes up towns on load.
 local function hide_inner_borders(merged)
@@ -267,36 +248,23 @@ local function sweep()
     W.merged = merged
     if cfg.AutoMergeNewClaims then for _, r in ipairs(claims) do merge_new_claim(r) end end
 
-    local wanted = {}
+    local signature = {}
     for _, r in ipairs(children) do
         local key = addr(r)
         local info = W.fresh[key]
         if info then
             if strip_starter(r, info) then W.fresh[key] = nil end -- move on the next sweep
         else
-            wanted[key] = true
+            move_all(r, merged[key])
         end
+        signature[#signature + 1] = tostring(key)
     end
-    if next(wanted) then
-        local by_region = movable_by_region(wanted)
-        for key, list in pairs(by_region) do move_all(list, merged[key]) end
+    table.sort(signature)
+    signature = table.concat(signature, ",")
+    if signature ~= W.border_signature then
+        hide_inner_borders(merged)
+        W.border_signature = signature
     end
-    hide_inner_borders(merged)
-end
-
--- ---------------------------------------------------------------- UI redirect
--- The HUD and region panel follow the region under the camera or cursor. On
--- merged land that is the empty outpost, so point them at the parent town.
-local UI_FIELDS = { "currentRegion", "selectedRegion", "RegionPanelTarget", "hoveringRegion" }
-local function redirect_ui()
-    local pawn, merged = W.pawn, W.merged
-    if not merged or next(merged) == nil or not valid(pawn) or os.clock() < W.ready_at then return end
-    local changed = false
-    for _, f in ipairs(UI_FIELDS) do
-        local parent = merged[addr(get(pawn, f)) or 0]
-        if parent and valid(parent) then pawn[f] = parent; changed = true end
-    end
-    if changed then pcall(pawn.updateCurrentRegionUI, pawn) end
 end
 
 -- ---------------------------------------------------------------- scheduling
@@ -313,10 +281,6 @@ if native_ok then
             sweeping = true
             ExecuteInGameThread(function() guarded(sweep, "sweep")(); sweeping = false end)
         end
-        return false
-    end)
-    LoopAsync(200, function()
-        ExecuteInGameThread(guarded(redirect_ui, "ui"))
         return false
     end)
     RegisterKeyBind(Key.M, { ModifierKey.CONTROL }, function()
