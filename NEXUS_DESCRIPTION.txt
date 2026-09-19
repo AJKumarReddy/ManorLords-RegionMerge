@@ -1,0 +1,73 @@
+=== Nexus page fields ===
+Name:              RegionMerge - One Town Across Many Regions
+Version:           1.0.0
+Category:          Gameplay
+Summary (short):   Claimed land becomes part of the town it borders: one population, storage, treasury and job pool across as many regions as you like. Merge existing settlements with Ctrl+M. For game version 0.8.104 (requires UE4SS).
+Requirements:      UE4SS (https://github.com/UE4SS-RE/RE-UE4SS)
+Main file:         RegionMerge-1.0.0.zip  (extract into the game folder)
+
+=== Description (BBCode, paste below) ===
+
+[size=5][b]RegionMerge - One Town Across Many Regions[/b][/size]
+
+Claim land next to your town and it [b]becomes part of that town[/b], instead of a separate settlement with its own villagers, storage and treasury. You can also fold an existing settlement into a neighbouring one, and combine as many regions as you like into one town.
+
+[size=4][b]Features[/b][/size]
+[list]
+[*][b]Claim and grow[/b] - a claimed region that borders your town (or land already merged into it) joins the town automatically. Build there like in your home region.
+[*][b]Merge existing settlements[/b] - select one of your settlements that borders another and press [b]Ctrl+M[/b]. Families, houses, workplaces, goods and treasury move into the neighbouring town.
+[*][b]Shared everything[/b] - one population, one job pool, one storage, one treasury, one construction queue.
+[*][b]Correct UI numbers[/b] - the HUD and region panel show the whole town, even while you look at merged land. The border line inside the town is hidden.
+[*][b]Save-safe[/b] - merges are stored in your save and survive reloading.
+[*][b]Fair[/b] - merged land does not get the free starter goods and wealth a new settlement would.
+[*][b]Version-safe[/b] - on any game version other than 0.8.104 the mod switches itself off and the game runs unchanged.
+[/list]
+
+[size=4][b]Requirements[/b][/size]
+[list]
+[*]Manor Lords [b]0.8.104[/b] (Steam, Windows)
+[*][url=https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest]UE4SS[/url] - tested with [b]v3.0.1-1136-g35d1795d[/b]
+[/list]
+
+[size=4][b]Installation[/b][/size]
+[list=1]
+[*]Install UE4SS into [i]ManorLords\Binaries\Win64[/i] (extract the UE4SS zip there, not the zDEV one). In [i]ue4ss\UE4SS-settings.ini[/i] set [i]bUseUObjectArrayCache = false[/i] and [i]UseModuleOffsets = 1[/i].
+[*]Extract [b]RegionMerge-1.0.0.zip[/b] into your [b]game folder[/b] (the folder with ManorLords.exe) and let it merge folders. The mod ends up in [i]ManorLords\Binaries\Win64\ue4ss\Mods\RegionMerge[/i].
+[*]Start the game. [i]ue4ss\UE4SS.log[/i] should show [i][RegionMerge] native helper active (OK 0.8.104)[/i].
+[/list]
+If Windows blocks the DLL: right-click [i]RegionMergeNative.dll[/i] > Properties > tick [i]Unblock[/i].
+
+[size=4][b]Usage[/b][/size]
+[list]
+[*][b]New land[/b]: claim a region bordering your town. It merges within a few seconds.
+[*][b]Existing settlement[/b]: select it and press [b]Ctrl+M[/b] (or console command [i]regionmerge[/i]).
+[*][b]Settings[/b]: [i]ue4ss\Mods\RegionMerge\Scripts\config.lua[/i] - auto-merge on/off, starter-supply removal, border hiding.
+[/list]
+
+[size=4][color=#ff9900][b]Important[/b][/color][/size]
+[list]
+[*][b]Back up your saves[/b] first: %LOCALAPPDATA%\ManorLords\Saved\SaveGames
+[*][b]A save with merged regions needs this mod to load.[/b] Merges cannot be undone, and removing the mod from such a save can crash it on load.
+[*]A game update switches the mod off until an updated version is released.
+[/list]
+
+[size=4][b]Uninstall[/b][/size]
+Delete [i]ue4ss\Mods\RegionMerge[/i] - only for saves that never merged anything (see Important).
+
+[size=4][b]Compatibility[/b][/size]
+Works alongside UE4SS mods that don't change regions, settlements or claiming. Mods that do may conflict.
+
+[size=4][b]How it works / source[/b][/size]
+Region membership lives in the game's native code, out of reach of Lua, so the mod ships a small C helper ([i]RegionMergeNative.dll[/i]). The helper checks the game's code before it changes anything. It re-registers buildings, goods and villagers with the parent town, and makes the game do the same when it loads a save. A Lua script handles claims, merges and the UI. There is no network access. Full source and build instructions are on GitHub.
+
+[size=4][b]Bug reports[/b][/size]
+Please attach [i]ue4ss\UE4SS.log[/i], [i]ue4ss\Mods\RegionMerge\RegionMergeNative.log[/i] and the newest folder in [i]%LOCALAPPDATA%\ManorLords\Saved\Crashes[/i].
+
+[size=4][b]License[/b][/size]
+MIT - free to use, modify and redistribute with attribution. Source on GitHub.
+
+[size=4][b]Credits[/b][/size]
+[list]
+[*]UE4SS team - [url=https://github.com/UE4SS-RE/RE-UE4SS]RE-UE4SS[/url]
+[*]Slavic Magic / Hooded Horse - Manor Lords (this is an unofficial fan mod)
+[/list]

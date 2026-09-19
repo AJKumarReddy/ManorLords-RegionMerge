@@ -1,0 +1,11 @@
+# release archive for Nexus (upload it as a GitHub release asset instead)
+*.zip
+
+# files the helper writes at runtime
+*.status
+*.log
+
+# build leftovers
+source/*.dll
+source/*.lib
+source/*.pdb
