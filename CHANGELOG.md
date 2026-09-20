@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.0.5 — 2026-09-20
+
+Merged land now keeps its own place on the map, and what it shares with its
+town is shared outright rather than pretended.
+
+- **Fixed: nothing could be built on merged land ("Not enough goods").** A
+  building's cost is checked against the goods the region itself holds, read
+  straight out of the region with no call to answer for. Merged land now really
+  holds what its town holds: both of a region's goods lists are kept as copies
+  of the town's, remade every couple of seconds with the game's own routine.
+- **Fixed: forager huts, mines and other buildings that live off the land.**
+  Resource deposits on merged land were being moved to the town, leaving the
+  land with none of its own. They stay where they are now.
+- **Fixed: development perks** bought for a town now apply on land merged into
+  it, instead of the land answering with perks it never had.
+- Roads, plot-to-road snapping and burgage plots on merged land keep working;
+  the road lookup behind them is answered by the land that owns the roads.
+- Console command `regionmergedebug` reports, while a building is held ready,
+  why the game is refusing it and what that land says it holds.
+
+### Known limitation
+
+- The region panel on merged land shows that region's own population rather
+  than the town's, so it reads low. The villagers really are working there;
+  only the number is wrong.
+- Goods taken from merged land's own copy are not taken from the town. Building
+  and construction draw on the town, because the buildings belong to it.
+
 ## 1.0.4 — 2026-09-20
 
 - **Fixed: roads, plot-to-road snapping and burgage plots on merged land.**

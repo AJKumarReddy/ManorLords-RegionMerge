@@ -11,6 +11,7 @@ local PREFIX = "[RegionMerge] "
 local MAGIC_RESIDENT = -777701 -- op 1: move a resident unit into the Context region
 local MAGIC_MERGE = -777702    -- op 2: move a region's buildings into Context and share its trees
 local MAGIC_ROADS = -777703    -- op 3: have a region's roads work out their regions again
+local MAGIC_STOCK = -777705    -- op 5: keep a region's goods list a copy of its town's
 local OUTPOST = 5              -- ESettlementType::Outpost
 
 local function log(msg) print(PREFIX .. msg .. "\n") end
@@ -145,15 +146,11 @@ local function refresh_roads(child, parent)
     parent:SetFamilyHome(MAGIC_ROADS, child, false)
 end
 
--- Resource clumps (berries, stone, ...) carry their own Region tag. Loading a
--- save retags them by position; do the same once when land is merged.
-local function retag_resources(child, parent)
-    local n = 0
-    for _, x in ipairs(FindAllOf("Resource") or {}) do
-        if valid(x) and same(get(x, "Region"), child) then x.Region = parent; n = n + 1 end
-    end
-    return n
-end
+-- Resource clumps (berries, stone, ...) carry their own Region tag, and they
+-- stay with the land they sit on. Moving them to the town used to be necessary
+-- when the town answered for merged land; now that the land answers for itself,
+-- taking them away left it with no deposits at all, and a forager hut or mine
+-- there had nothing to work.
 
 -- ---------------------------------------------------------------- merging
 local function merge_new_claim(r)
@@ -288,7 +285,9 @@ local function sweep()
             if strip_starter(r, info) then W.fresh[key] = nil end -- move on the next sweep
         else
             move_all(r, merged[key])
-            if not W.retagged[key] then retag_resources(r, merged[key]); W.retagged[key] = true end
+            -- a building's cost is checked against the goods the region itself
+            -- holds, so merged land is kept holding what its town holds
+            merged[key]:SetFamilyHome(MAGIC_STOCK, r, false)
             if not W.roads_done[key] then refresh_roads(r, merged[key]); W.roads_done[key] = true end
         end
         signature[#signature + 1] = tostring(key)
@@ -327,6 +326,53 @@ if native_ok then
     else
         log("unknown MergeKey '" .. tostring(cfg.MergeKey) .. "' in config.lua; use the console command")
     end
+    -- Diagnostic: while a building is held ready to place over merged land,
+    -- report why the game is refusing it and what that land says it holds.
+    local function debug_placement(out)
+        local function say(m)
+            log(m)
+            if out then pcall(out.Log, out, "RegionMerge: " .. m) end
+        end
+        if not refresh_world() then say("world not ready"); return end
+        local p = W.pawn
+        local r = get(p, "regionUnderCursor") or get(p, "selectedRegion") or get(p, "currentRegion")
+        local root = valid(r) and root_of(r)
+        say(string.format("region=%s type=%s root=%s", str(get(r, "regionName")),
+            str(get(r, "settlementType")), root and str(get(root, "regionName")) or "-"))
+        say(string.format("hoverProblem=%s insideBorders=%s isSnapped=%s fieldCollides=%s",
+            str(get(p, "hoverProblem")), str(get(p, "isInsideBorders")),
+            str(get(p, "placeBuilding_isSnapped")), str(get(p, "fieldCollides"))))
+        if valid(r) then
+            local parts = {}
+            for _, g in ipairs({ 6, 15, 16, 172, 216 }) do
+                local ok, n = pcall(r.getStockOfGood, r, g, false, false)
+                parts[#parts + 1] = g .. "=" .. (ok and str(n) or "err")
+            end
+            say("stock seen by that region: " .. table.concat(parts, " "))
+            if root then
+                local tp = {}
+                for _, g in ipairs({ 6, 15, 16, 172, 216 }) do
+                    local ok, n = pcall(root.getStockOfGood, root, g, false, false)
+                    tp[#tp + 1] = g .. "=" .. (ok and str(n) or "err")
+                end
+                say("stock seen by its town:   " .. table.concat(tp, " "))
+            end
+            local res = {}
+            for _, x in ipairs(FindAllOf("Resource") or {}) do
+                if valid(x) and same(get(x, "Region"), r) then
+                    local t = str(get(x, "resourceType") or get(x, "Type") or "?")
+                    res[t] = (res[t] or 0) + 1
+                end
+            end
+            local rp = {}
+            for t, n in pairs(res) do rp[#rp + 1] = t .. "x" .. n end
+            say("resource deposits tagged to that region: " .. (#rp > 0 and table.concat(rp, " ") or "none"))
+        end
+    end
+    RegisterConsoleCommandHandler("regionmergedebug", function(_, _, out)
+        guarded(debug_placement, "debug")(out)
+        return true
+    end)
     RegisterConsoleCommandHandler("regionmerge", function(_, _, out)
         guarded(merge_selected, "merge")(out)
         return true

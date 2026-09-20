@@ -1,10 +1,10 @@
 === Nexus page fields ===
 Name:              RegionMerge - One Town Across Many Regions
-Version:           1.0.4
+Version:           1.0.5
 Category:          Gameplay
 Summary (short):   Claimed land becomes part of the town it borders: one population, storage, treasury and job pool across as many regions as you like. Merge existing settlements with Ctrl+Alt+PageUp. For game version 0.8.104 (requires UE4SS).
 Requirements:      UE4SS (https://github.com/UE4SS-RE/RE-UE4SS)
-Main file:         RegionMerge-1.0.4.zip  (extract into the game folder)
+Main file:         RegionMerge-1.0.5.zip  (extract into the game folder)
 
 === Description (BBCode, paste below) ===
 
@@ -33,7 +33,7 @@ Claim land next to your town and it [b]becomes part of that town[/b], instead of
 [size=4][b]Installation[/b][/size]
 [list=1]
 [*]Install UE4SS into [i]ManorLords\Binaries\Win64[/i] (extract the UE4SS zip there, not the zDEV one). In [i]ue4ss\UE4SS-settings.ini[/i] set [i]bUseUObjectArrayCache = false[/i] and [i]UseModuleOffsets = 1[/i].
-[*]Extract [b]RegionMerge-1.0.4.zip[/b] into your [b]game folder[/b] (the folder with ManorLords.exe) and let it merge folders. The mod ends up in [i]ManorLords\Binaries\Win64\ue4ss\Mods\RegionMerge[/i].
+[*]Extract [b]RegionMerge-1.0.5.zip[/b] into your [b]game folder[/b] (the folder with ManorLords.exe) and let it merge folders. The mod ends up in [i]ManorLords\Binaries\Win64\ue4ss\Mods\RegionMerge[/i].
 [*]Start the game. [i]ue4ss\UE4SS.log[/i] should show [i][RegionMerge] native helper active (OK 0.8.104)[/i].
 [/list]
 If Windows blocks the DLL: right-click [i]RegionMergeNative.dll[/i] > Properties > tick [i]Unblock[/i].

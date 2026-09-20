@@ -34,7 +34,7 @@ RegionMerge is a UE4SS mod. It was tested with **UE4SS
 
 ## Step 2 — install RegionMerge
 
-**Manual:** extract `RegionMerge-1.0.4.zip` into your **game folder** and let
+**Manual:** extract `RegionMerge-1.0.5.zip` into your **game folder** and let
 it merge folders. The result must be:
 
 ```
@@ -114,6 +114,9 @@ When reporting a bug, attach:
 - The region panel on merged land shows that region's own population rather
   than the town's, so it reads low. The villagers of the town really are
   working there; only the number is wrong.
-- Roads, plot-to-road snapping and burgage plots on merged land are fixed in
-  1.0.4 and confirmed in game. The engine side (region lookups, construction
-  registration, shared stock) is covered by automated tests.
+- Roads, plot-to-road snapping, burgage plots and building on merged land are
+  fixed and confirmed in game. The engine side (region lookups, road lookups,
+  shared stock, save and reload) is covered by automated tests.
+- Merged land holds a copy of its town's goods, remade every couple of seconds.
+  Goods taken from that copy are not taken from the town; buildings and their
+  construction draw on the town, because they belong to it.

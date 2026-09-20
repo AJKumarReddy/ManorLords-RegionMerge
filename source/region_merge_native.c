@@ -43,6 +43,10 @@
 #define RVA_POINT_INSIDE         0x4beee50 // bool ARegion::isPointInside(const FVector*)
 #define RVA_FIND_ROADPOINT       0x4adb7c0 // bool APawnCPP::findNearestRoadpoint(ARegion*, const FVector*, FVector* out, bool kingsOnly)
 #define RVA_GET_STOCK            0x4beaee0 // int32 ARegion::getStockOfGood(int32 good, uint8 which, bool flag)
+#define RVA_MERGE_GOODS          0x4b0f2a0 // addGoods(TArray<FGood>* dest, const TArray<FGood>* src, bool subtract, bool)
+#define RVA_HAS_SURPLUS          0x4bede30 // bool ARegion::hasSurplusOfGoodsMinusReservedSimple(TArray<FGood>*, int32)
+#define RVA_PERK_ACTIVE          0x4b35440 // bool UPerkHelperLibrary::IsEffectActive(TScriptInterface<IRegionProvider>, EPerkEffect)
+#define RVA_STOCK_PTR            0x4beaec0 // FGood* ARegion::getStock(uint8 which) -> this+0x528+(which<<4)
 #define RVA_ROAD_CLOSEST         0x4c4d250 // ARoad closest point to a position, worked out against a given ARegion
 #define RVA_ROAD_REGIONS         0x4c7ae00 // ARoad::updateRegions(): rebuilds the road's region list
 #define RVA_PLAN_SYNC            0x4c5d7d0 // files a road with the planning data of each of its regions
@@ -63,6 +67,7 @@
 #define OFF_REG_OWNER      0x350 // ownerPawn
 #define OFF_REG_RESIDENTS  0x368 // residents (TArray<ASMUnit*>)
 #define OFF_REG_BUILDINGS  0x658 // native TArray<ASMBuildingMaster*>
+#define OFF_REG_STOCK      0x528 // TArray<FGood>, 24-byte elements; data +0x528, num +0x530
 #define OFF_REG_PLANNING   0x738 // CityPlanningComponent: road snap points live here
 #define OFF_PLAN_RECORDS   0x520 // UCityPlanningComponent: TArray of per-road planning records
 #define OFF_REG_FOLIAGE    0xf70 // regionalFoliage (TArray<UInstancedStaticMeshComponent*>)
@@ -88,7 +93,8 @@
 
 // Commands from Lua arrive as SetFamilyHome(familyID = MAGIC_BASE - op, arg).
 #define MAGIC_BASE (-777700)
-enum { OP_MOVE_RESIDENT = 1, OP_MERGE_LAND = 2, OP_REFRESH_ROADS = 3, OP_REPORT_ROADS = 4 };
+enum { OP_MOVE_RESIDENT = 1, OP_MERGE_LAND = 2, OP_REFRESH_ROADS = 3, OP_REPORT_ROADS = 4,
+       OP_SYNC_STOCK = 5 };
 
 // ---------------------------------------------------------------- types
 typedef struct { void *data; int32_t num, max; } TArrayRaw;
@@ -105,6 +111,10 @@ typedef uint8_t (*AddRoadFn)(void *region, void *road);
 typedef uint8_t (*PointInsideFn)(void *region, const Vec3 *pos);
 typedef uint8_t (*FindRoadpointFn)(void *pawn, void *region, const Vec3 *pos, Vec3 *out, uint8_t kings_only);
 typedef int32_t (*GetStockFn)(void *region, int32_t good, uint8_t which, uint8_t flag);
+typedef void *(*StockPtrFn)(void *region, uint8_t which);
+typedef uint8_t (*PerkActiveFn)(void *provider, uint8_t perk);
+typedef uint8_t (*HasSurplusFn)(void *region, void *goods, int32_t flag);
+typedef void (*MergeGoodsFn)(TArrayRaw *dest, const TArrayRaw *src, uint8_t subtract, uint8_t flag);
 typedef uint8_t (*RoadClosestFn)(void *road, void *out_point, const Vec3 *pos, void *out_b,
                                  void *out_dist, uint8_t flag, void *region);
 typedef void (*RoadRegionsFn)(void *road);
@@ -126,6 +136,10 @@ static PointInsideFn g_point_inside_orig;
 static FindRoadpointFn g_find_roadpoint_orig;
 static RoadClosestFn g_road_closest_orig;
 static GetStockFn g_get_stock_orig;
+static StockPtrFn g_stock_ptr_orig;
+static PerkActiveFn g_perk_orig;
+static HasSurplusFn g_has_surplus_orig;
+static MergeGoodsFn g_merge_goods;
 static RoadRegionsFn g_road_regions_orig;
 static RegionBldFn g_add, g_remove;
 static StockUpdateFn g_stock;
@@ -357,6 +371,52 @@ static uint8_t hooked_point_inside(void *region, const Vec3 *pos) {
     return is_merged_into(t_point_land, r) ? 1 : inside;
 }
 
+// Merged land the helper has been told about, remembered by pointer so that a
+// region can be recognised without reading anything out of an object that might
+// not be one. Cleared whenever the world changes.
+#define MAX_MERGED 64
+static struct { void *land, *town; } g_merged[MAX_MERGED];
+static int g_merged_n;
+static uint8_t *g_merged_world;
+
+static void note_merged(uint8_t *land, uint8_t *town) {
+    uint8_t *eng = *(uint8_t **)(land + OFF_REG_MASTER);
+    if (eng != g_merged_world) { g_merged_world = eng; g_merged_n = 0; }
+    for (int i = 0; i < g_merged_n; i++)
+        if (g_merged[i].land == land) { g_merged[i].town = town; return; }
+    if (g_merged_n < MAX_MERGED) {
+        g_merged[g_merged_n].land = land;
+        g_merged[g_merged_n].town = town;
+        g_merged_n++;
+    }
+}
+
+static void *merged_town_of(void *obj) {
+    for (int i = 0; i < g_merged_n; i++)
+        if (g_merged[i].land == obj) return g_merged[i].town;
+    return NULL;
+}
+
+// A region's development perks are its own, and merged land has none of its
+// own: the perks the player bought belong to the town. Asked whether a perk is
+// in effect for merged land, answer for its town, so a building there gets the
+// same perks as one at home. The provider is an interface pair
+// { object, interface }; the substitute is built at the same offset into the
+// town, which is sound because both are regions of the same class.
+static uint8_t hooked_perk_active(void *provider, uint8_t perk) {
+    if (provider) {
+        void **p = (void **)provider;
+        void *town = merged_town_of(p[0]);
+        if (town) {
+            void *sub[2];
+            sub[0] = town;
+            sub[1] = p[1] ? (void *)((uint8_t *)town + ((uint8_t *)p[1] - (uint8_t *)p[0])) : NULL;
+            return g_perk_orig(sub, perk);
+        }
+    }
+    return g_perk_orig(provider, perk);
+}
+
 // ---------------------------------------------------------------- the economy
 // Merged land keeps its own shape, so every question about where something is
 // answers with the land -- which is what makes roads, snapping and plots on it
@@ -364,9 +424,42 @@ static uint8_t hooked_point_inside(void *region, const Vec3 *pos) {
 // registered with the town, so the town's stock is the real pool and the land's
 // own is empty. Asked what it holds, merged land answers with its town's stock,
 // which is what the cost of a building, the goods panel and construction read.
+// Diagnostic: who asks merged land what it holds. Each distinct caller is
+// logged once, with the good it asked about and the answer it was given.
+static void *g_askers[48];
+static int g_askers_n;
+static void note_asker(const char *what, void *ret, uint8_t *land, int32_t good, int32_t answer) {
+    for (int i = 0; i < g_askers_n; i++) if (g_askers[i] == ret) return;
+    if (g_askers_n >= (int)(sizeof g_askers / sizeof *g_askers)) return;
+    g_askers[g_askers_n++] = ret;
+    nlog("ASK %s from +%#llx land %p good %d -> %d", what,
+         (unsigned long long)((uint8_t *)ret - g_base), (void *)land, good, answer);
+}
+
 static int32_t hooked_get_stock(void *region, int32_t good, uint8_t which, uint8_t flag) {
     uint8_t *root = merge_root((uint8_t *)region);
-    return g_get_stock_orig(root ? root : region, good, which, flag);
+    int32_t n = g_get_stock_orig(root ? root : region, good, which, flag);
+    if (root) note_asker("getStockOfGood", __builtin_return_address(0), (uint8_t *)region, good, n);
+    return n;
+}
+
+// "Not enough goods": the check behind a building's construction cost asks the
+// region whether it has the goods to spare, and reads its stock without going
+// through the accessors above. Merged land answers for its town here too, so a
+// building placed there is paid for out of the town's storage.
+static uint8_t hooked_has_surplus(void *region, void *goods, int32_t flag) {
+    uint8_t *root = merge_root((uint8_t *)region);
+    if (root) note_asker("hasSurplus", __builtin_return_address(0), (uint8_t *)region, -1, -1);
+    return g_has_surplus_orig(root ? root : region, goods, flag);
+}
+
+// The goods array itself. Anything that takes the region's stock list and reads
+// it directly -- rather than asking for one good at a time -- comes through
+// here, so merged land has to hand over its town's list the same way.
+static void *hooked_stock_ptr(void *region, uint8_t which) {
+    uint8_t *root = merge_root((uint8_t *)region);
+    if (root) note_asker("getStock(ptr)", __builtin_return_address(0), (uint8_t *)region, which, -1);
+    return g_stock_ptr_orig(root ? root : region, which);
 }
 
 // Every road-against-a-region question in the game comes through here: the
@@ -583,6 +676,48 @@ static int refresh_roads(uint8_t *land) {
     return n;
 }
 
+// The cost of a building is checked against the region's stock read straight
+// out of the region -- no call to go through, so no answer to give. The only
+// way merged land can hold what its town holds is to really hold it.
+//
+// The land has no stock of its own to lose: every building on it is registered
+// with the town, so the town's storage is the only real pool. Its list is kept
+// as a copy of the town's, made with the game's own routine so the memory stays
+// the game's. The copy is refreshed on every sweep: what is there now is taken
+// back out, then the town's list is added in.
+#define GOOD_SIZE 24
+// A region keeps two goods lists, side by side: getStock(which) hands back
+// this+0x528 for one and this+0x538 for the other. Both are copied -- the cost
+// of a building is checked against one of them, and filling only the first left
+// the panel showing the town's goods while the cost still found nothing.
+static int sync_one(uint8_t *land, uint8_t *town, int which) {
+    TArrayRaw *dst = (TArrayRaw *)(land + OFF_REG_STOCK + which * 16);
+    TArrayRaw *src = (TArrayRaw *)(town + OFF_REG_STOCK + which * 16);
+    if (dst->num > 0 && dst->data) {
+        // Take out what is there, from a copy: the routine reads its source
+        // while it writes its destination, and here they would be the same list.
+        size_t bytes = (size_t)dst->num * GOOD_SIZE;
+        void *copy = HeapAlloc(GetProcessHeap(), 0, bytes);
+        if (!copy) return 0;
+        memcpy(copy, dst->data, bytes);
+        TArrayRaw held = { copy, dst->num, dst->num };
+        g_merge_goods(dst, &held, 1, 1);
+        HeapFree(GetProcessHeap(), 0, copy);
+    }
+    int32_t before = dst->num;
+    if (src->num > 0 && src->data) g_merge_goods(dst, src, 0, 1);
+    static volatile LONG n;
+    if (InterlockedIncrement(&n) <= 10)
+        nlog("SYNC land %p list %d: had %d, town has %d/%d, land now %d/%d",
+             (void *)land, which, before, src->num, src->max, dst->num, dst->max);
+    return dst->num;
+}
+
+static int sync_stock(uint8_t *land, uint8_t *town) {
+    if (!land || !town || land == town || !g_merge_goods) return 0;
+    return sync_one(land, town, 0) + sync_one(land, town, 1);
+}
+
 // ---------------------------------------------------------------- Lua's way in
 // Lua reaches the helper through ARegion::SetFamilyHome with a familyID no real
 // family could have. Every other call runs the game's own code.
@@ -599,8 +734,11 @@ static void hooked_exec(void *ctx, void *stack, void *result) {
             if (op == OP_MOVE_RESIDENT) {
                 move_resident((uint8_t *)ctx, (uint8_t *)arg);
             } else if (op == OP_MERGE_LAND) { // arg is the merged region
+                note_merged((uint8_t *)arg, (uint8_t *)ctx);
                 move_region_buildings((uint8_t *)ctx, (uint8_t *)arg);
                 share_lists((uint8_t *)ctx, (uint8_t *)arg);
+            } else if (op == OP_SYNC_STOCK) { // arg is the merged region
+                sync_stock((uint8_t *)arg, (uint8_t *)ctx);
             } else if (op == OP_REFRESH_ROADS) { // arg is the merged region
                 refresh_roads((uint8_t *)arg);
             } else if (op == OP_REPORT_ROADS) { // read-only: what the road lookup sees
@@ -684,7 +822,9 @@ static int build_matches(void) {
         { RVA_REGION_ADD_ROAD,      SIG_ADD_ROAD },     { RVA_POINT_INSIDE,        SIG_POINT_INSIDE },
         { RVA_ROAD_REGIONS,         SIG_ROAD_REGIONS }, { RVA_PLAN_SYNC,           SIG_PLAN_SYNC },
         { RVA_PLAN_DROP,            SIG_PLAN_REMOVE },  { RVA_ROAD_CLOSEST,        SIG_ROAD_CLOSEST },
-        { RVA_GET_STOCK,            SIG_GET_STOCK },
+        { RVA_GET_STOCK,            SIG_GET_STOCK },    { RVA_STOCK_PTR,           SIG_STOCK_PTR },
+        { RVA_PERK_ACTIVE,          SIG_PERK_ACTIVE },  { RVA_HAS_SURPLUS,         SIG_HAS_SURPLUS },
+        { RVA_MERGE_GOODS,          SIG_MERGE_GOODS },
     };
     for (int i = 0; i < (int)(sizeof routines / sizeof *routines); i++)
         if (memcmp(g_base + routines[i].rva, routines[i].sig, 32)) return 0;
@@ -719,6 +859,7 @@ static int install(void) {
     g_grow8 = (GrowFn)(g_base + RVA_TARRAY_GROW8);
     g_plan_sync = (PlanSyncFn)(g_base + RVA_PLAN_SYNC);
     g_plan_drop = (PlanDropFn)(g_base + RVA_PLAN_DROP);
+    g_merge_goods = (MergeGoodsFn)(g_base + RVA_MERGE_GOODS);
 
     // getRegionByPos first: the other hooks use its trampoline for raw answers.
     g_region_by_pos = (RegionByPosFn)hook_fn(g_base + RVA_REGION_BY_POS, (void *)&hooked_region_by_pos, 15);
@@ -732,6 +873,12 @@ static int install(void) {
     g_road_closest_orig = (RoadClosestFn)hook_fn(g_base + RVA_ROAD_CLOSEST, (void *)&hooked_road_closest, 17);
     // 17, not 16: the boundaries are 2,3,7,9,13,17 and 16 would split `shl rdx,4`
     g_get_stock_orig = (GetStockFn)hook_fn(g_base + RVA_GET_STOCK, (void *)&hooked_get_stock, 17);
+    // boundaries 3,7,13,16,17: 16 keeps the trailing `ret` intact
+    g_stock_ptr_orig = (StockPtrFn)hook_fn(g_base + RVA_STOCK_PTR, (void *)&hooked_stock_ptr, 16);
+    // boundaries 2,6,11,14: 14 is exactly the patch size
+    g_perk_orig = (PerkActiveFn)hook_fn(g_base + RVA_PERK_ACTIVE, (void *)&hooked_perk_active, 14);
+    // boundaries 5,10,15,20: 15 is the first at or past the 14 the patch needs
+    g_has_surplus_orig = (HasSurplusFn)hook_fn(g_base + RVA_HAS_SURPLUS, (void *)&hooked_has_surplus, 15);
     if (!g_exec_orig || !g_find_orig || !g_center_orig || !g_add_road_orig ||
         !g_point_inside_orig || !g_road_regions_orig || !g_road_closest_orig ) {
         write_status("DISABLED hook install failed");
