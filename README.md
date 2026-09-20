@@ -5,7 +5,7 @@ separate settlement with its own villagers, storage and treasury. You can also
 fold an existing settlement into a neighbouring one, and combine as many
 regions as you like into a single town.
 
-- **Version:** 1.0.3
+- **Version:** 1.0.4
 - **Game:** Manor Lords **0.8.104** (Steam, Windows)
 - **Requires:** [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS)
 
@@ -19,9 +19,11 @@ regions as you like into a single town.
   treasury move into the neighbouring town.
 - **Shared everything:** one population, one job pool, one storage, one
   treasury, one construction queue. Forests and resource patches on merged
-  land belong to the town too.
-- **Correct UI numbers:** the HUD and region panel show the whole town, even
-  while you look at merged land. The border line between merged regions is hidden.
+  land belong to the town too, and roads, snapping and burgage plots work on
+  merged land exactly as they do at home.
+- **Shared storage everywhere:** the goods panel on merged land shows the
+  town's stock, and buildings there are paid for and supplied from it. The
+  border line between merged regions is hidden.
 - **Save-safe:** merges are stored in your save and survive reloading.
 - **Fair:** merged land doesn't get the free starter goods and wealth a new
   settlement would.
@@ -32,7 +34,7 @@ regions as you like into a single town.
 
 1. Install **UE4SS** into `ManorLords\Binaries\Win64`. See [INSTALL.md](INSTALL.md)
    for the tested version and settings.
-2. Download `RegionMerge-1.0.3.zip` and **extract it into your Manor Lords
+2. Download `RegionMerge-1.0.4.zip` and **extract it into your Manor Lords
    game folder**, the one that contains `ManorLords.exe`. Let it merge
    folders. The mod ends up in:
    ```
@@ -74,14 +76,19 @@ Region membership lives in the game's native code, out of reach of Lua. The mod
 has two parts:
 
 - **`RegionMergeNative.dll`**, a small helper written in C. Before it changes
-  anything it checks the game's code against 0.8.104. If that check passes, it
-  makes the game's position lookup treat merged land as the parent town, which
-  covers placement costs, construction, builders, storage and the HUD. It also
-  re-registers buildings, goods and villagers with the town, including when a
-  save loads, and gives the town the merged land's forests.
+  anything it checks the game's code against 0.8.104.
 - **`Scripts/main.lua`**, a UE4SS Lua script. It detects claims, runs merges and
-  hides inner borders. Merged land is
-  kept as a native *outpost* of its town, so the game saves the link itself.
+  hides inner borders. Merged land is kept as a native *outpost* of its town, so
+  the game saves the link itself.
+
+Merged land keeps its own identity on the map. Everything that asks *where* something
+is — roads, plot-to-road snapping, burgage plots, borders — gets the land's own
+answer, which is why those work there exactly as they do anywhere else.
+
+What is shared is the economy. Buildings on merged land are registered with the
+town, so the town's storage is the real pool; asked what it holds, merged land
+answers with the town's stock, which is what a building's cost, the goods panel
+and construction read. The town's villagers work at buildings on merged land.
 
 The full source of the helper is in [`source/`](source); you can build it
 yourself (see `source/BUILD.md`). There is no network access, and the helper

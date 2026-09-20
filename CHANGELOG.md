@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.4 — 2026-09-20
+
+- **Fixed: roads, plot-to-road snapping and burgage plots on merged land.**
+  Placing a burgage plot next to a road on merged land found nothing to snap
+  to, and the snap markers did not appear. Everything that asks "which road is
+  near here?" works out each road against the region it is given, and merged
+  land was answering with its town — whose border those roads fall outside, so
+  they were passed over. Merged land now answers for itself, as it does before
+  it is merged, and roads there behave as they always did.
+- Goods are shared the other way round instead: asked what it holds, merged
+  land answers with its town's stock, which is what a building's cost, the
+  goods panel and construction read. Buildings on merged land were already
+  registered with the town, so the town's stock was always the real pool.
+- Villagers of the town work at buildings on merged land, as before.
+
+### Known limitation
+
+- The region panel on merged land shows that region's own population rather
+  than the town's, so it reads low. The villagers really are working there;
+  only the number is wrong.
+
 ## 1.0.3 — 2026-09-19
 
 - The merge hotkey is now **Ctrl+Alt+PageUp**. Ctrl+M also toggled the game's map view

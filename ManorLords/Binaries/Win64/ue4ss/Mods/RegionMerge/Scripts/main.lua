@@ -10,6 +10,7 @@ local PREFIX = "[RegionMerge] "
 -- Commands to RegionMergeNative, sent as SetFamilyHome(familyID = magic, ...)
 local MAGIC_RESIDENT = -777701 -- op 1: move a resident unit into the Context region
 local MAGIC_MERGE = -777702    -- op 2: move a region's buildings into Context and share its trees
+local MAGIC_ROADS = -777703    -- op 3: have a region's roads work out their regions again
 local OUTPOST = 5              -- ESettlementType::Outpost
 
 local function log(msg) print(PREFIX .. msg .. "\n") end
@@ -71,7 +72,7 @@ local function refresh_world()
     local key = e:GetAddress()
     if key ~= W.engine_addr then
         W = { engine_addr = key, engine = e, ready_at = os.clock() + 8, merged = {}, fresh = {},
-              hidden = {}, retagged = {} }
+              hidden = {}, retagged = {}, roads_done = {} }
         return false
     end
     if os.clock() < W.ready_at then return false end
@@ -133,6 +134,15 @@ end
 -- gets `child`'s tree lists so its woodcutters and foresters see those trees.
 local function move_all(child, parent)
     parent:SetFamilyHome(MAGIC_MERGE, child, false)
+end
+
+-- Roads worked out which regions they cross while the land still stood alone,
+-- so they never named the town, and the town's planning data is what plot
+-- snapping and the road collision test read. Have them work it out again --
+-- once per piece of land, since the game keeps no check against a road being
+-- filed twice.
+local function refresh_roads(child, parent)
+    parent:SetFamilyHome(MAGIC_ROADS, child, false)
 end
 
 -- Resource clumps (berries, stone, ...) carry their own Region tag. Loading a
@@ -279,6 +289,7 @@ local function sweep()
         else
             move_all(r, merged[key])
             if not W.retagged[key] then retag_resources(r, merged[key]); W.retagged[key] = true end
+            if not W.roads_done[key] then refresh_roads(r, merged[key]); W.roads_done[key] = true end
         end
         signature[#signature + 1] = tostring(key)
     end
