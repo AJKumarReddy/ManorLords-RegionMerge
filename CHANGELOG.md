@@ -11,18 +11,21 @@ town is the town's, answered where the town is the right answer.
   land now reads its town, and the panel shows the town it belongs to:
   population, wealth, approval, public order, food and fuel stores, taxes and
   retinue all come from the town it was merged into.
-- **Fixed: a villager on merged land counted as being somewhere their work was
-  not.** A villager carries the region they are standing in, and the job they
-  are sent to is checked against it; on merged land they called that land their
-  region while the building called the town its own, so the family was never
-  dispatched. They now count as being in the town they belong to.
+- **A villager on merged land now counts as being in the town they belong to.**
+  A villager carries the region they are standing in, and on merged land that
+  was the land itself while the building they were sent to belonged to the
+  town. The one call that sets it answers with the town now. Whether this is
+  what decides a family being dispatched has not been shown either way; it was
+  changed because the two disagreeing is wrong on its own terms.
 - **Merged land now takes its town's name**, so hovering it names the town
   rather than the settlement it used to be. A save finds a region again by
   where it is, not by what it is called, so a shared name is safe.
 - **Livestock** are residents of a region, counted out of the same list as
-  people. They moved to the town once, at the merge, and never again; anything
-  born or bought afterwards stayed behind and no pasture would house it.
-  Residents now move on every sweep, beside the buildings.
+  people, and they moved to the town once at the merge and never again.
+  Residents now move on every sweep, beside the buildings, so anything born or
+  bought on merged land afterwards reaches the town too. Untested: no save to
+  hand has had a pasture on merged land breeding animals, so this has not been
+  seen to do anything yet.
 - Plot-to-road snapping, the curve a burgage plot's edge copies, roads and
   building all work on merged land exactly as they do at home.
 - The helper no longer writes its `ASK` diagnostics to the log.
@@ -33,10 +36,11 @@ town is the town's, answered where the town is the right answer.
   hut, hunting camp or fisherman's hut there is dispatched its family, and the
   family arrives and does nothing. A villager looking for something to gather
   works out which region the spot is in and reads that region's own list of
-  deposits; merged land's deposits are on a list the town's villagers will not
-  gather from, and retagging them does not move them onto the town's list.
-  Construction, haulage and every building that does not live off the land are
-  unaffected.
+  deposits, so merged land's deposits are on a list the town's villagers do not
+  gather from. Retagging each deposit to the town was tried and did not help;
+  the tag a deposit carries looks not to be the list the gatherer reads, though
+  that has not been proven. Construction, haulage and every building that does
+  not live off the land are unaffected.
 - **Merged land reports the goods its town holds, not the none it holds
   itself**, and that total is written to the save. Taking the copy away was
   tried: a building placed on merged land then could not be paid for, because
