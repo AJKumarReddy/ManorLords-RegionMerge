@@ -27,20 +27,20 @@ town is the town's, answered where the town is the right answer.
   hand has had a pasture on merged land breeding animals, so this has not been
   seen to do anything yet.
 - Plot-to-road snapping, the curve a burgage plot's edge copies, roads and
-  building all work on merged land exactly as they do at home.
+  construction all work on merged land.
 - The helper no longer writes its `ASK` diagnostics to the log.
 
 ### Known limitations
 
 - **Buildings that live off the land do not work on merged land.** A forager
-  hut, hunting camp or fisherman's hut there is dispatched its family, and the
-  family arrives and does nothing. A villager looking for something to gather
-  works out which region the spot is in and reads that region's own list of
-  deposits, so merged land's deposits are on a list the town's villagers do not
-  gather from. Retagging each deposit to the town was tried and did not help;
-  the tag a deposit carries looks not to be the list the gatherer reads, though
-  that has not been proven. Construction, haulage and every building that does
-  not live off the land are unaffected.
+  hut, hunting camp or fisherman's hut there produces nothing, while the same
+  building off merged land works normally. The family assigned to it has been
+  seen both to stay away and to reach the building and stand idle; it is not
+  consistent, and it is not understood. A villager of the town told to gather
+  merged land's berries does not go. Retagging the deposits to the town was
+  tried and did not help. The cause has not been found. Construction and
+  haulage on merged land were seen to work; other kinds of building there have
+  not been tried.
 - **Merged land reports the goods its town holds, not the none it holds
   itself**, and that total is written to the save. Taking the copy away was
   tried: a building placed on merged land then could not be paid for, because
