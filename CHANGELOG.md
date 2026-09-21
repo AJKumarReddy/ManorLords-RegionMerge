@@ -8,7 +8,9 @@ town is the town's, answered where the town is the right answer.
 - **Fixed: the region panel on merged land showed nobody and nothing.** 1.0.5
   read that land's own population, wealth and stores -- all of which had moved
   to the town -- so it reported zero people and no treasury. Selecting merged
-  land now reads its town, and the panel shows the town it belongs to.
+  land now reads its town, and the panel shows the town it belongs to:
+  population, wealth, approval, public order, food and fuel stores, taxes and
+  retinue all come from the town it was merged into.
 - **Fixed: buildings that live off the land had nothing to work.** A forager
   hut, mine, hunting camp or fisherman's hut on merged land is registered with
   its town, and looks for the deposits tagged to the region it belongs to.
@@ -39,9 +41,9 @@ town is the town's, answered where the town is the right answer.
   what stops a burgage plot following the road. Snapping and production cannot
   both be had this way, and this release keeps snapping. Construction and
   haulage on merged land are unaffected.
-- Retinue, approval, public order, food and fuel stores, taxes and the problem
-  banner stay with the region that raised them, so merged land still reports
-  those under its own heading.
+- A warning raised on merged land is still raised by that land rather than by
+  its town. It now carries the town's name, since merged land takes it, so it
+  reads as the town's warning.
 
 ## 1.0.5 — 2026-09-20
 
