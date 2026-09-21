@@ -5,7 +5,7 @@ separate settlement with its own villagers, storage and treasury. You can also
 fold an existing settlement into a neighbouring one, and combine as many
 regions as you like into a single town.
 
-- **Version:** 1.0.5
+- **Version:** 1.0.6
 - **Game:** Manor Lords **0.8.104** (Steam, Windows)
 - **Requires:** [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS)
 
@@ -35,7 +35,7 @@ regions as you like into a single town.
 
 1. Install **UE4SS** into `ManorLords\Binaries\Win64`. See [INSTALL.md](INSTALL.md)
    for the tested version and settings.
-2. Download `RegionMerge-1.0.5.zip` and **extract it into your Manor Lords
+2. Download `RegionMerge-1.0.6.zip` and **extract it into your Manor Lords
    game folder**, the one that contains `ManorLords.exe`. Let it merge
    folders. The mod ends up in:
    ```

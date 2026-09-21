@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.0.6 — 2026-09-21
+
+Merged land keeps its own ground and its own roads; what it shares with its
+town is the town's, answered where the town is the right answer.
+
+- **Fixed: the region panel on merged land showed nobody and nothing.** 1.0.5
+  read that land's own population, wealth and stores -- all of which had moved
+  to the town -- so it reported zero people and no treasury. Selecting merged
+  land now reads its town, and the panel shows the town it belongs to.
+- **Fixed: buildings that live off the land had nothing to work.** A forager
+  hut, mine, hunting camp or fisherman's hut on merged land is registered with
+  its town, and looks for the deposits tagged to the region it belongs to.
+  Those deposits were left tagged to the land, so it found none. They are
+  retagged to the town to match the buildings that work them.
+- **Merged land now takes its town's name**, so hovering it names the town
+  rather than the settlement it used to be. A save finds a region again by
+  where it is, not by what it is called, so a shared name is safe.
+- **Livestock** are residents of a region, counted out of the same list as
+  people. They moved to the town once, at the merge, and never again; anything
+  born or bought afterwards stayed behind and no pasture would house it.
+  Residents now move on every sweep, beside the buildings.
+- Plot-to-road snapping, the curve a burgage plot's edge copies, roads and
+  building all work on merged land exactly as they do at home.
+- The helper no longer writes its `ASK` diagnostics to the log.
+
+### Known limitations
+
+- **Workers do not produce on merged land.** A family assigned to a production
+  building there walks out to it and stands idle. Dispatch wants the building
+  filed under the family's town, and the work itself wants the ground under it
+  to answer with that same town -- and the ground answering with the town is
+  what stops a burgage plot following the road. Snapping and production cannot
+  both be had this way, and this release keeps snapping. Construction and
+  haulage on merged land are unaffected.
+- Merged land reports the goods its town holds rather than the none it holds
+  itself, and that total is written to the save.
+- Retinue, approval, public order, food and fuel stores, taxes and the problem
+  banner stay with the region that raised them, so merged land still reports
+  those under its own heading.
+
 ## 1.0.5 — 2026-09-20
 
 Merged land now keeps its own place on the map, and what it shares with its

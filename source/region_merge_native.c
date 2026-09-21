@@ -51,6 +51,7 @@
 #define RVA_ROAD_REGIONS         0x4c7ae00 // ARoad::updateRegions(): rebuilds the road's region list
 #define RVA_PLAN_SYNC            0x4c5d7d0 // files a road with the planning data of each of its regions
 #define RVA_PLAN_DROP            0x4b3e620 // UCityPlanningComponent::removeRoad(ARoad*)
+#define RVA_PANEL_REGION         0x4ae3f90 // APawnCPP::getRegionForRegionPanel -> pawn+0xcc0
 #define RVA_SET_REGION           0x4c9a680 // ASMBuildingMaster::SetRegion (mov [rcx+2c8],rdx; ret)
 #define RVA_TARRAY_GROW8         0x10b8e60 // TArray<8-byte>::ResizeGrow(arr, oldNum), called after Num++
 
@@ -69,7 +70,7 @@
 #define OFF_REG_BUILDINGS  0x658 // native TArray<ASMBuildingMaster*>
 #define OFF_REG_STOCK      0x528 // TArray<FGood>, 24-byte elements; data +0x528, num +0x530
 #define OFF_REG_PLANNING   0x738 // CityPlanningComponent: road snap points live here
-#define OFF_PLAN_RECORDS   0x520 // UCityPlanningComponent: TArray of per-road planning records
+#define OFF_PLAN_RECORDS   0x120 // UCityPlanningComponent: road spatial index (data +0x120, num +0x128)
 #define OFF_REG_FOLIAGE    0xf70 // regionalFoliage (TArray<UInstancedStaticMeshComponent*>)
 #define TYPE_OUTPOST       5     // ESettlementType::Outpost
 
@@ -120,6 +121,7 @@ typedef uint8_t (*RoadClosestFn)(void *road, void *out_point, const Vec3 *pos, v
 typedef void (*RoadRegionsFn)(void *road);
 typedef void (*PlanSyncFn)(void *engine, void *road);
 typedef void (*PlanDropFn)(void *planning, void *road);
+typedef void *(*PanelRegionFn)(void *pawn);
 
 #include "signatures.h"
 
@@ -146,6 +148,7 @@ static StockUpdateFn g_stock;
 static GrowFn g_grow8;
 static PlanSyncFn g_plan_sync;
 static PlanDropFn g_plan_drop;
+static PanelRegionFn g_panel_region_orig;
 
 // While set, position lookups answer with the real land rather than its town.
 static __thread int t_raw_lookup;
@@ -334,6 +337,19 @@ static Vec3 *hooked_center(uint8_t *region, Vec3 *out) {
     return res;
 }
 
+// The region panel. Merged land keeps its own place on the map, so every
+// question about where something is still answers with the land -- which is
+// what makes roads, snapping and plots work there exactly as they do at home.
+// What the land is not is a settlement of its own: its families, its residents
+// and its treasury all moved to the town. Asked which region the panel should
+// show, merged land hands over its town, so clicking it reads the town's
+// population, wealth and stores rather than the nothing the land has left.
+static void *hooked_panel_region(void *pawn) {
+    uint8_t *r = (uint8_t *)g_panel_region_orig(pawn);
+    uint8_t *root = merge_root(r);
+    return root ? root : r;
+}
+
 // ------------------------------------------------ which region is this? (2/3)
 // By shape. A road remembers the regions it crosses, and the game keeps that
 // list by asking each region whether it contains the road's points -- geometry
@@ -424,23 +440,9 @@ static uint8_t hooked_perk_active(void *provider, uint8_t perk) {
 // registered with the town, so the town's stock is the real pool and the land's
 // own is empty. Asked what it holds, merged land answers with its town's stock,
 // which is what the cost of a building, the goods panel and construction read.
-// Diagnostic: who asks merged land what it holds. Each distinct caller is
-// logged once, with the good it asked about and the answer it was given.
-static void *g_askers[48];
-static int g_askers_n;
-static void note_asker(const char *what, void *ret, uint8_t *land, int32_t good, int32_t answer) {
-    for (int i = 0; i < g_askers_n; i++) if (g_askers[i] == ret) return;
-    if (g_askers_n >= (int)(sizeof g_askers / sizeof *g_askers)) return;
-    g_askers[g_askers_n++] = ret;
-    nlog("ASK %s from +%#llx land %p good %d -> %d", what,
-         (unsigned long long)((uint8_t *)ret - g_base), (void *)land, good, answer);
-}
-
 static int32_t hooked_get_stock(void *region, int32_t good, uint8_t which, uint8_t flag) {
     uint8_t *root = merge_root((uint8_t *)region);
-    int32_t n = g_get_stock_orig(root ? root : region, good, which, flag);
-    if (root) note_asker("getStockOfGood", __builtin_return_address(0), (uint8_t *)region, good, n);
-    return n;
+    return g_get_stock_orig(root ? root : region, good, which, flag);
 }
 
 // "Not enough goods": the check behind a building's construction cost asks the
@@ -449,7 +451,6 @@ static int32_t hooked_get_stock(void *region, int32_t good, uint8_t which, uint8
 // building placed there is paid for out of the town's storage.
 static uint8_t hooked_has_surplus(void *region, void *goods, int32_t flag) {
     uint8_t *root = merge_root((uint8_t *)region);
-    if (root) note_asker("hasSurplus", __builtin_return_address(0), (uint8_t *)region, -1, -1);
     return g_has_surplus_orig(root ? root : region, goods, flag);
 }
 
@@ -458,7 +459,6 @@ static uint8_t hooked_has_surplus(void *region, void *goods, int32_t flag) {
 // here, so merged land has to hand over its town's list the same way.
 static void *hooked_stock_ptr(void *region, uint8_t which) {
     uint8_t *root = merge_root((uint8_t *)region);
-    if (root) note_asker("getStock(ptr)", __builtin_return_address(0), (uint8_t *)region, which, -1);
     return g_stock_ptr_orig(root ? root : region, which);
 }
 
@@ -600,6 +600,34 @@ static int move_resident(uint8_t *to, uint8_t *unit) {
     return 1;
 }
 
+// Every resident of `from`, moved to `to`. Livestock are residents too -- the
+// game counts a region's animals out of the same list it counts its people --
+// and a region works out which animal belongs in which pasture by pairing its
+// own residents against its own buildings. The buildings on merged land are
+// registered with the town, so an animal left behind on the land can never be
+// paired with the pasture it lives in: born or bought there, it becomes an
+// animal no pasture will house and no count will show.
+//
+// The merge moved residents once and never again, so only what existed at that
+// moment ever arrived, and land merged as a fresh claim moved none at all.
+// This runs on every sweep beside the building move, which is what keeps the
+// two lists on the same side.
+static int move_region_residents(uint8_t *to, uint8_t *from) {
+    if (!to || !from || to == from) return 0;
+    TArrayRaw *list = (TArrayRaw *)(from + OFF_REG_RESIDENTS);
+    int32_t n = list->num;
+    if (n <= 0) return 0;
+    void **snap = HeapAlloc(GetProcessHeap(), 0, (size_t)n * sizeof(void *));
+    if (!snap) return 0;
+    memcpy(snap, list->data, (size_t)n * sizeof(void *));
+    int moved = 0;
+    for (int32_t i = 0; i < n; i++)
+        if (snap[i]) moved += move_resident(to, (uint8_t *)snap[i]);
+    HeapFree(GetProcessHeap(), 0, snap);
+    if (moved) nlog("moved %d residents %p -> %p", moved, (void *)from, (void *)to);
+    return moved;
+}
+
 // Trees live in per-region foliage components, and buildings, workers and
 // position queries search the list of the region they belong to. Give the town
 // the land's components; the land keeps its own, so code that indexes that list
@@ -736,6 +764,7 @@ static void hooked_exec(void *ctx, void *stack, void *result) {
             } else if (op == OP_MERGE_LAND) { // arg is the merged region
                 note_merged((uint8_t *)arg, (uint8_t *)ctx);
                 move_region_buildings((uint8_t *)ctx, (uint8_t *)arg);
+                move_region_residents((uint8_t *)ctx, (uint8_t *)arg);
                 share_lists((uint8_t *)ctx, (uint8_t *)arg);
             } else if (op == OP_SYNC_STOCK) { // arg is the merged region
                 sync_stock((uint8_t *)arg, (uint8_t *)ctx);
@@ -824,7 +853,7 @@ static int build_matches(void) {
         { RVA_PLAN_DROP,            SIG_PLAN_REMOVE },  { RVA_ROAD_CLOSEST,        SIG_ROAD_CLOSEST },
         { RVA_GET_STOCK,            SIG_GET_STOCK },    { RVA_STOCK_PTR,           SIG_STOCK_PTR },
         { RVA_PERK_ACTIVE,          SIG_PERK_ACTIVE },  { RVA_HAS_SURPLUS,         SIG_HAS_SURPLUS },
-        { RVA_MERGE_GOODS,          SIG_MERGE_GOODS },
+        { RVA_MERGE_GOODS,          SIG_MERGE_GOODS },  { RVA_PANEL_REGION,        SIG_PANEL_REGION },
     };
     for (int i = 0; i < (int)(sizeof routines / sizeof *routines); i++)
         if (memcmp(g_base + routines[i].rva, routines[i].sig, 32)) return 0;
@@ -879,8 +908,12 @@ static int install(void) {
     g_perk_orig = (PerkActiveFn)hook_fn(g_base + RVA_PERK_ACTIVE, (void *)&hooked_perk_active, 14);
     // boundaries 5,10,15,20: 15 is the first at or past the 14 the patch needs
     g_has_surplus_orig = (HasSurplusFn)hook_fn(g_base + RVA_HAS_SURPLUS, (void *)&hooked_has_surplus, 15);
+    // 8 bytes of body then padding; 14 is the patch size and the stolen `ret`
+    // means the trampoline never reaches its jump back
+    g_panel_region_orig = (PanelRegionFn)hook_fn(g_base + RVA_PANEL_REGION, (void *)&hooked_panel_region, 14);
     if (!g_exec_orig || !g_find_orig || !g_center_orig || !g_add_road_orig ||
-        !g_point_inside_orig || !g_road_regions_orig || !g_road_closest_orig ) {
+        !g_point_inside_orig || !g_road_regions_orig || !g_road_closest_orig ||
+        !g_panel_region_orig) {
         write_status("DISABLED hook install failed");
         return 0;
     }

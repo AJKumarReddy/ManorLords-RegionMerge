@@ -146,11 +146,25 @@ local function refresh_roads(child, parent)
     parent:SetFamilyHome(MAGIC_ROADS, child, false)
 end
 
--- Resource clumps (berries, stone, ...) carry their own Region tag, and they
--- stay with the land they sit on. Moving them to the town used to be necessary
--- when the town answered for merged land; now that the land answers for itself,
--- taking them away left it with no deposits at all, and a forager hut or mine
--- there had nothing to work.
+-- Resource clumps (berries, stone, game, ...) carry their own Region tag, and a
+-- building that lives off the land looks for the ones tagged to the region it
+-- belongs to. Every building on merged land is registered with the town, so a
+-- forager hut, mine or hunting camp out there asks the town for its deposits --
+-- and found none, because the deposits were left tagged to the land. Its family
+-- walked out to it and stood there with nothing to work. The deposits are
+-- retagged to the town to match the buildings that work them, once per piece of
+-- land, since scanning the object table is not cheap.
+local function retag_resources(child, parent)
+    local n = 0
+    for _, x in ipairs(FindAllOf("Resource") or {}) do
+        if valid(x) and same(get(x, "Region"), child) then
+            local ok = pcall(function() x.Region = parent end)
+            if ok then n = n + 1 end
+        end
+    end
+    if n > 0 then log("retagged " .. n .. " resource deposits on " .. str(get(child, "regionName"))) end
+    return n
+end
 
 -- ---------------------------------------------------------------- merging
 local function merge_new_claim(r)
@@ -245,9 +259,21 @@ local function merge_selected(out)
     if out then out:Log("RegionMerge: " .. msg) end
 end
 
+-- Land merged into a town takes the town's name, so hovering it names the town
+-- rather than the settlement it used to be. The game renames regions itself --
+-- renameRegion is its own call, and it tells the rest of the game through
+-- OnRegionRenamed -- and a save finds a region again by the Center it was
+-- written at, not by what it is called (SavedRegion keeps a Center and an
+-- outpostToRegionLocation, with a CustomName beside them), so two regions
+-- sharing a name cannot confuse a load. The name is set again on every sweep,
+-- so renaming the town carries to everything merged into it.
+local function rename_to_town(child, parent)
+    local want = get(parent, "regionName")
+    if want == nil or want == "" or get(child, "regionName") == want then return end
+    pcall(function() child:renameRegion(want) end)
+end
+
 -- Hide the border line between a town and land merged into it.
--- Regions are never renamed: saves match region data by name, and a duplicate
--- name mixes up towns on load.
 local function hide_inner_borders(merged)
     if not cfg.HideInnerBorders then return end
     each(get(W.engine, "borders"), function(b)
@@ -285,10 +311,12 @@ local function sweep()
             if strip_starter(r, info) then W.fresh[key] = nil end -- move on the next sweep
         else
             move_all(r, merged[key])
+            rename_to_town(r, merged[key])
             -- a building's cost is checked against the goods the region itself
             -- holds, so merged land is kept holding what its town holds
             merged[key]:SetFamilyHome(MAGIC_STOCK, r, false)
             if not W.roads_done[key] then refresh_roads(r, merged[key]); W.roads_done[key] = true end
+            if not W.retagged[key] then retag_resources(r, merged[key]); W.retagged[key] = true end
         end
         signature[#signature + 1] = tostring(key)
     end
