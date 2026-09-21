@@ -25,11 +25,6 @@ town is the town's, answered where the town is the right answer.
   Residents now move on every sweep, beside the buildings.
 - Plot-to-road snapping, the curve a burgage plot's edge copies, roads and
   building all work on merged land exactly as they do at home.
-- **Fixed: merged land reported goods it did not hold.** Its own goods list was
-  kept as a copy of its town's, and that copied total was written to the save.
-  Asked what it holds, merged land already answers with its town's stock, so
-  the copy had nothing to do; the list is drained instead, which also clears
-  the total out of a save written by an earlier version.
 - The helper no longer writes its `ASK` diagnostics to the log.
 
 ### Known limitations
@@ -42,6 +37,11 @@ town is the town's, answered where the town is the right answer.
   gather from, and retagging them does not move them onto the town's list.
   Construction, haulage and every building that does not live off the land are
   unaffected.
+- **Merged land reports the goods its town holds, not the none it holds
+  itself**, and that total is written to the save. Taking the copy away was
+  tried: a building placed on merged land then could not be paid for, because
+  the cost is checked against the goods the region itself holds, read straight
+  out of it with no call to answer for.
 - A warning raised on merged land is still raised by that land rather than by
   its town. It now carries the town's name, since merged land takes it, so it
   reads as the town's warning.
