@@ -11,11 +11,11 @@ town is the town's, answered where the town is the right answer.
   land now reads its town, and the panel shows the town it belongs to:
   population, wealth, approval, public order, food and fuel stores, taxes and
   retinue all come from the town it was merged into.
-- **Fixed: buildings that live off the land had nothing to work.** A forager
-  hut, mine, hunting camp or fisherman's hut on merged land is registered with
-  its town, and looks for the deposits tagged to the region it belongs to.
-  Those deposits were left tagged to the land, so it found none. They are
-  retagged to the town to match the buildings that work them.
+- **Fixed: a villager on merged land counted as being somewhere their work was
+  not.** A villager carries the region they are standing in, and the job they
+  are sent to is checked against it; on merged land they called that land their
+  region while the building called the town its own, so the family was never
+  dispatched. They now count as being in the town they belong to.
 - **Merged land now takes its town's name**, so hovering it names the town
   rather than the settlement it used to be. A save finds a region again by
   where it is, not by what it is called, so a shared name is safe.
@@ -34,13 +34,14 @@ town is the town's, answered where the town is the right answer.
 
 ### Known limitations
 
-- **Workers do not produce on merged land.** A family assigned to a production
-  building there walks out to it and stands idle. Dispatch wants the building
-  filed under the family's town, and the work itself wants the ground under it
-  to answer with that same town -- and the ground answering with the town is
-  what stops a burgage plot following the road. Snapping and production cannot
-  both be had this way, and this release keeps snapping. Construction and
-  haulage on merged land are unaffected.
+- **Buildings that live off the land do not work on merged land.** A forager
+  hut, hunting camp or fisherman's hut there is dispatched its family, and the
+  family arrives and does nothing. A villager looking for something to gather
+  works out which region the spot is in and reads that region's own list of
+  deposits; merged land's deposits are on a list the town's villagers will not
+  gather from, and retagging them does not move them onto the town's list.
+  Construction, haulage and every building that does not live off the land are
+  unaffected.
 - A warning raised on merged land is still raised by that land rather than by
   its town. It now carries the town's name, since merged land takes it, so it
   reads as the town's warning.

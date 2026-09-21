@@ -59,6 +59,7 @@
 #define RVA_CALL_SET_REGION_LOAD 0x4c169a4 // save loader: SetRegion(bld, getRegionByPos(savedPos))
 #define RVA_CALL_SET_REGION_NEW  0x4b64e9c // building spawn: SetRegion(bld, region)
 #define RVA_CALL_BY_POS_RESTORE  0x4c14cfb // save loader: live region for each saved region Center
+#define RVA_CALL_BY_POS_UNIT     0x4d93019 // sets ASMUnit::currentRegion from where the villager stands
 
 // ARegion
 #define OFF_REG_TYPE       0x2d8 // settlementType (uint8)
@@ -305,6 +306,20 @@ static void *restore_region_by_pos(void *engine, const Vec3 *pos, uint8_t skip_b
     void *r = g_region_by_pos(engine, pos, skip_bounds);
     t_covering = was;
     return r;
+}
+
+// A villager carries the region they are standing in, and the work they are
+// sent to do is checked against it. Every building on merged land is
+// registered with its town, so a villager standing out there called the land
+// their region, the building called the town its own, the two never agreed and
+// the family was never dispatched -- or walked out and stood idle. Here, and
+// only here, merged land answers with its town, so a villager on it counts as
+// being in the town they belong to. Everything about where things are -- roads,
+// snapping, the shape a plot takes -- still gets the land's own answer.
+static void *unit_region_by_pos(void *engine, const Vec3 *pos, uint8_t skip_bounds) {
+    uint8_t *r = g_region_by_pos(engine, pos, skip_bounds);
+    uint8_t *root = merge_root(r);
+    return root ? root : r;
 }
 
 // Loading a save, and spawning a finished building, assign the region found at
@@ -718,42 +733,32 @@ static int refresh_roads(uint8_t *land) {
 // this+0x528 for one and this+0x538 for the other. Both are copied -- the cost
 // of a building is checked against one of them, and filling only the first left
 // the panel showing the town's goods while the cost still found nothing.
-static int drain_one(uint8_t *land, int which) {
+static int sync_one(uint8_t *land, uint8_t *town, int which) {
     TArrayRaw *dst = (TArrayRaw *)(land + OFF_REG_STOCK + which * 16);
-    if (dst->num <= 0 || !dst->data) return 0;
-    // Take out what is there, from a copy: the routine reads its source while
-    // it writes its destination, and here they would be the same list.
-    size_t bytes = (size_t)dst->num * GOOD_SIZE;
-    void *copy = HeapAlloc(GetProcessHeap(), 0, bytes);
-    if (!copy) return 0;
-    memcpy(copy, dst->data, bytes);
-    TArrayRaw held = { copy, dst->num, dst->num };
-    g_merge_goods(dst, &held, 1, 1);
-    HeapFree(GetProcessHeap(), 0, copy);
-    return 1;
+    TArrayRaw *src = (TArrayRaw *)(town + OFF_REG_STOCK + which * 16);
+    if (dst->num > 0 && dst->data) {
+        // Take out what is there, from a copy: the routine reads its source
+        // while it writes its destination, and here they would be the same list.
+        size_t bytes = (size_t)dst->num * GOOD_SIZE;
+        void *copy = HeapAlloc(GetProcessHeap(), 0, bytes);
+        if (!copy) return 0;
+        memcpy(copy, dst->data, bytes);
+        TArrayRaw held = { copy, dst->num, dst->num };
+        g_merge_goods(dst, &held, 1, 1);
+        HeapFree(GetProcessHeap(), 0, copy);
+    }
+    int32_t before = dst->num;
+    if (src->num > 0 && src->data) g_merge_goods(dst, src, 0, 1);
+    static volatile LONG n;
+    if (InterlockedIncrement(&n) <= 10)
+        nlog("SYNC land %p list %d: had %d, town has %d/%d, land now %d/%d",
+             (void *)land, which, before, src->num, src->max, dst->num, dst->max);
+    return dst->num;
 }
 
-// A region's goods list is the game's running total of what its own buildings
-// hold. Merged land has none of its own -- every building on it is registered
-// with the town -- so the only honest total there is nothing at all. Asked what
-// it holds, it answers with its town's stock through the accessors above, which
-// is what a building's cost, the goods panel and construction read.
-//
-// Earlier versions kept the land's own list filled with a copy of the town's.
-// The land then reported goods it did not hold, and that total was written to
-// the save. Draining is what clears it, and it keeps running rather than simply
-// stopping: a save written by an earlier version carries the copied total, and
-// the game would go on believing it. An empty list drains to nothing and costs
-// nothing, so this settles by itself once the land is honest.
-static int drain_stock(uint8_t *land) {
-    if (!land || !g_merge_goods) return 0;
-    int drained = drain_one(land, 0) + drain_one(land, 1);
-    if (drained) {
-        static volatile LONG n;
-        if (InterlockedIncrement(&n) <= 5)
-            nlog("DRAIN land %p: cleared its copied goods total", (void *)land);
-    }
-    return drained;
+static int sync_stock(uint8_t *land, uint8_t *town) {
+    if (!land || !town || land == town || !g_merge_goods) return 0;
+    return sync_one(land, town, 0) + sync_one(land, town, 1);
 }
 
 // ---------------------------------------------------------------- Lua's way in
@@ -777,7 +782,7 @@ static void hooked_exec(void *ctx, void *stack, void *result) {
                 move_region_residents((uint8_t *)ctx, (uint8_t *)arg);
                 share_lists((uint8_t *)ctx, (uint8_t *)arg);
             } else if (op == OP_SYNC_STOCK) { // arg is the merged region
-                drain_stock((uint8_t *)arg);
+                sync_stock((uint8_t *)arg, (uint8_t *)ctx);
             } else if (op == OP_REFRESH_ROADS) { // arg is the merged region
                 refresh_roads((uint8_t *)arg);
             } else if (op == OP_REPORT_ROADS) { // read-only: what the road lookup sees
@@ -871,6 +876,7 @@ static int build_matches(void) {
         { RVA_CALL_SET_REGION_LOAD, RVA_SET_REGION },
         { RVA_CALL_SET_REGION_NEW,  RVA_SET_REGION },
         { RVA_CALL_BY_POS_RESTORE,  RVA_REGION_BY_POS },
+        { RVA_CALL_BY_POS_UNIT,     RVA_REGION_BY_POS },
     };
     for (int i = 0; i < (int)(sizeof calls / sizeof *calls); i++) {
         uint8_t *s = g_base + calls[i].site;
@@ -933,7 +939,10 @@ static int install(void) {
         // the save loader finds each region again by its stored Center, and
         // must see the land itself there rather than the town
         !redirect_call(g_base + RVA_CALL_BY_POS_RESTORE, g_base + RVA_REGION_BY_POS,
-                       (void *)&restore_region_by_pos)) {
+                       (void *)&restore_region_by_pos) ||
+        // a villager on merged land counts as being in the town they belong to
+        !redirect_call(g_base + RVA_CALL_BY_POS_UNIT, g_base + RVA_REGION_BY_POS,
+                       (void *)&unit_region_by_pos)) {
         write_status("DISABLED call sites not found");
         return 0;
     }

@@ -146,25 +146,13 @@ local function refresh_roads(child, parent)
     parent:SetFamilyHome(MAGIC_ROADS, child, false)
 end
 
--- Resource clumps (berries, stone, game, ...) carry their own Region tag, and a
--- building that lives off the land looks for the ones tagged to the region it
--- belongs to. Every building on merged land is registered with the town, so a
--- forager hut, mine or hunting camp out there asks the town for its deposits --
--- and found none, because the deposits were left tagged to the land. Its family
--- walked out to it and stood there with nothing to work. The deposits are
--- retagged to the town to match the buildings that work them, once per piece of
--- land, since scanning the object table is not cheap.
-local function retag_resources(child, parent)
-    local n = 0
-    for _, x in ipairs(FindAllOf("Resource") or {}) do
-        if valid(x) and same(get(x, "Region"), child) then
-            local ok = pcall(function() x.Region = parent end)
-            if ok then n = n + 1 end
-        end
-    end
-    if n > 0 then log("retagged " .. n .. " resource deposits on " .. str(get(child, "regionName"))) end
-    return n
-end
+-- Resource clumps (berries, stone, game, ...) carry a Region tag of their own
+-- and stay with the land they sit on. Retagging them to the town was tried
+-- and taken out again: a villager looking for something to gather works out
+-- which region a spot is in and reads that region's own list of deposits,
+-- and that list is not the tag. Moving the tag moved nothing the gatherer
+-- reads, and left the land's deposits belonging to a region no villager of
+-- the town would accept them from.
 
 -- ---------------------------------------------------------------- merging
 local function merge_new_claim(r)
@@ -316,7 +304,6 @@ local function sweep()
             -- holds, so merged land is kept holding what its town holds
             merged[key]:SetFamilyHome(MAGIC_STOCK, r, false)
             if not W.roads_done[key] then refresh_roads(r, merged[key]); W.roads_done[key] = true end
-            if not W.retagged[key] then retag_resources(r, merged[key]); W.retagged[key] = true end
         end
         signature[#signature + 1] = tostring(key)
     end
