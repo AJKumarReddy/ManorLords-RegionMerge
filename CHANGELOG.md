@@ -23,6 +23,11 @@ town is the town's, answered where the town is the right answer.
   Residents now move on every sweep, beside the buildings.
 - Plot-to-road snapping, the curve a burgage plot's edge copies, roads and
   building all work on merged land exactly as they do at home.
+- **Fixed: merged land reported goods it did not hold.** Its own goods list was
+  kept as a copy of its town's, and that copied total was written to the save.
+  Asked what it holds, merged land already answers with its town's stock, so
+  the copy had nothing to do; the list is drained instead, which also clears
+  the total out of a save written by an earlier version.
 - The helper no longer writes its `ASK` diagnostics to the log.
 
 ### Known limitations
@@ -34,8 +39,6 @@ town is the town's, answered where the town is the right answer.
   what stops a burgage plot following the road. Snapping and production cannot
   both be had this way, and this release keeps snapping. Construction and
   haulage on merged land are unaffected.
-- Merged land reports the goods its town holds rather than the none it holds
-  itself, and that total is written to the save.
 - Retinue, approval, public order, food and fuel stores, taxes and the problem
   banner stay with the region that raised them, so merged land still reports
   those under its own heading.

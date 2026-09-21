@@ -718,32 +718,42 @@ static int refresh_roads(uint8_t *land) {
 // this+0x528 for one and this+0x538 for the other. Both are copied -- the cost
 // of a building is checked against one of them, and filling only the first left
 // the panel showing the town's goods while the cost still found nothing.
-static int sync_one(uint8_t *land, uint8_t *town, int which) {
+static int drain_one(uint8_t *land, int which) {
     TArrayRaw *dst = (TArrayRaw *)(land + OFF_REG_STOCK + which * 16);
-    TArrayRaw *src = (TArrayRaw *)(town + OFF_REG_STOCK + which * 16);
-    if (dst->num > 0 && dst->data) {
-        // Take out what is there, from a copy: the routine reads its source
-        // while it writes its destination, and here they would be the same list.
-        size_t bytes = (size_t)dst->num * GOOD_SIZE;
-        void *copy = HeapAlloc(GetProcessHeap(), 0, bytes);
-        if (!copy) return 0;
-        memcpy(copy, dst->data, bytes);
-        TArrayRaw held = { copy, dst->num, dst->num };
-        g_merge_goods(dst, &held, 1, 1);
-        HeapFree(GetProcessHeap(), 0, copy);
-    }
-    int32_t before = dst->num;
-    if (src->num > 0 && src->data) g_merge_goods(dst, src, 0, 1);
-    static volatile LONG n;
-    if (InterlockedIncrement(&n) <= 10)
-        nlog("SYNC land %p list %d: had %d, town has %d/%d, land now %d/%d",
-             (void *)land, which, before, src->num, src->max, dst->num, dst->max);
-    return dst->num;
+    if (dst->num <= 0 || !dst->data) return 0;
+    // Take out what is there, from a copy: the routine reads its source while
+    // it writes its destination, and here they would be the same list.
+    size_t bytes = (size_t)dst->num * GOOD_SIZE;
+    void *copy = HeapAlloc(GetProcessHeap(), 0, bytes);
+    if (!copy) return 0;
+    memcpy(copy, dst->data, bytes);
+    TArrayRaw held = { copy, dst->num, dst->num };
+    g_merge_goods(dst, &held, 1, 1);
+    HeapFree(GetProcessHeap(), 0, copy);
+    return 1;
 }
 
-static int sync_stock(uint8_t *land, uint8_t *town) {
-    if (!land || !town || land == town || !g_merge_goods) return 0;
-    return sync_one(land, town, 0) + sync_one(land, town, 1);
+// A region's goods list is the game's running total of what its own buildings
+// hold. Merged land has none of its own -- every building on it is registered
+// with the town -- so the only honest total there is nothing at all. Asked what
+// it holds, it answers with its town's stock through the accessors above, which
+// is what a building's cost, the goods panel and construction read.
+//
+// Earlier versions kept the land's own list filled with a copy of the town's.
+// The land then reported goods it did not hold, and that total was written to
+// the save. Draining is what clears it, and it keeps running rather than simply
+// stopping: a save written by an earlier version carries the copied total, and
+// the game would go on believing it. An empty list drains to nothing and costs
+// nothing, so this settles by itself once the land is honest.
+static int drain_stock(uint8_t *land) {
+    if (!land || !g_merge_goods) return 0;
+    int drained = drain_one(land, 0) + drain_one(land, 1);
+    if (drained) {
+        static volatile LONG n;
+        if (InterlockedIncrement(&n) <= 5)
+            nlog("DRAIN land %p: cleared its copied goods total", (void *)land);
+    }
+    return drained;
 }
 
 // ---------------------------------------------------------------- Lua's way in
@@ -767,7 +777,7 @@ static void hooked_exec(void *ctx, void *stack, void *result) {
                 move_region_residents((uint8_t *)ctx, (uint8_t *)arg);
                 share_lists((uint8_t *)ctx, (uint8_t *)arg);
             } else if (op == OP_SYNC_STOCK) { // arg is the merged region
-                sync_stock((uint8_t *)arg, (uint8_t *)ctx);
+                drain_stock((uint8_t *)arg);
             } else if (op == OP_REFRESH_ROADS) { // arg is the merged region
                 refresh_roads((uint8_t *)arg);
             } else if (op == OP_REPORT_ROADS) { // read-only: what the road lookup sees
