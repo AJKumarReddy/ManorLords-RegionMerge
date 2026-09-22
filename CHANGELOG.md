@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.0.7 — 2026-09-21
+
+- **Fixed: forager huts, fisherman's huts and hunting camps on merged land
+  produced nothing.** A region's berries, mushrooms, fish, game and stone are
+  grouped into resource nodes, and each node names the region it serves. A
+  gathering hut takes work only from the nodes of its own region. A hut on
+  merged land belongs to the town, but the land's nodes still named the land,
+  so the hut found nothing to gather: its family was sent to do chores and the
+  hut showed no yield. The land's nodes now serve its town. Seen working in
+  game on two saves: a forager and a fisherman's hut on merged land get their
+  families out gathering and fishing, and a hunting camp there works too.
+  Plot-to-road snapping on merged land still works.
+- A save does not store which region a node serves -- it is worked out again
+  from where the node stands when the save loads -- so the hand-over is
+  repeated on every sweep and nothing new is written into saves.
+
+### Known limitations
+
+- **Merged land reports the goods its town holds, not the none it holds
+  itself**, and that total is written to the save (unchanged from 1.0.6).
+- A warning raised on merged land is still raised by that land rather than by
+  its town, though it carries the town's name (unchanged from 1.0.6).
+- Livestock on merged land: residents move to the town on every sweep since
+  1.0.6, but no save with a pasture breeding animals on merged land has been
+  tried, so this is still unseen.
+
 ## 1.0.6 — 2026-09-21
 
 Merged land keeps its own ground and its own roads; what it shares with its

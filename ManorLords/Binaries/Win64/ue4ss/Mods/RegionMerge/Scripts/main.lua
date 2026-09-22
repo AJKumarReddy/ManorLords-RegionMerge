@@ -147,12 +147,10 @@ local function refresh_roads(child, parent)
 end
 
 -- Resource clumps (berries, stone, game, ...) carry a Region tag of their own
--- and stay with the land they sit on. Retagging them to the town was tried
--- and taken out again: a villager looking for something to gather works out
--- which region a spot is in and reads that region's own list of deposits,
--- and that list is not the tag. Moving the tag moved nothing the gatherer
--- reads, and left the land's deposits belonging to a region no villager of
--- the town would accept them from.
+-- and stay with the land they sit on; retagging them changes nothing a
+-- gatherer reads. What a gathering hut reads is the resource nodes the clumps
+-- are grouped into, and the helper hands the land's nodes to the town on every
+-- merge sweep (hand_over_nodes in RegionMergeNative).
 
 -- ---------------------------------------------------------------- merging
 local function merge_new_claim(r)

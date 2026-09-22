@@ -5,7 +5,7 @@ separate settlement with its own villagers, storage and treasury. You can also
 fold an existing settlement into a neighbouring one, and combine as many
 regions as you like into a single town.
 
-- **Version:** 1.0.6
+- **Version:** 1.0.7
 - **Game:** Manor Lords **0.8.104** (Steam, Windows)
 - **Requires:** [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS)
 
@@ -19,8 +19,9 @@ regions as you like into a single town.
   treasury move into the neighbouring town.
 - **Shared everything:** one population, one job pool, one storage, one
   treasury, one construction queue. Forests and resource patches on merged
-  land belong to the town too, and roads, snapping and burgage plots work on
-  merged land exactly as they do at home.
+  land belong to the town too: foragers, fishermen and hunters work there like
+  at home, and roads, snapping and burgage plots work on merged land exactly as
+  they do at home.
 - **Shared storage everywhere:** merged land holds its town's goods, so
   anything you place there is paid for and supplied from the town. Resource
   deposits and development perks work on merged land too. The border line
@@ -35,7 +36,7 @@ regions as you like into a single town.
 
 1. Install **UE4SS** into `ManorLords\Binaries\Win64`. See [INSTALL.md](INSTALL.md)
    for the tested version and settings.
-2. Download `RegionMerge-1.0.6.zip` and **extract it into your Manor Lords
+2. Download `RegionMerge-1.0.7.zip` and **extract it into your Manor Lords
    game folder**, the one that contains `ManorLords.exe`. Let it merge
    folders. The mod ends up in:
    ```
@@ -89,7 +90,9 @@ answer, which is why those work there exactly as they do anywhere else.
 What is shared is the economy. Buildings on merged land are registered with the
 town, so the town's storage is the real pool; asked what it holds, merged land
 answers with the town's stock, which is what a building's cost, the goods panel
-and construction read. The town's villagers work at buildings on merged land.
+and construction read. The town's villagers work at buildings on merged land,
+and the land's resource nodes (berries, mushrooms, fish, game, stone) serve the
+town, so gathering huts there find work.
 
 The full source of the helper is in [`source/`](source); you can build it
 yourself (see `source/BUILD.md`). There is no network access, and the helper

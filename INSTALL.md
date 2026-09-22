@@ -34,7 +34,7 @@ RegionMerge is a UE4SS mod. It was tested with **UE4SS
 
 ## Step 2 — install RegionMerge
 
-**Manual:** extract `RegionMerge-1.0.5.zip` into your **game folder** and let
+**Manual:** extract `RegionMerge-1.0.7.zip` into your **game folder** and let
 it merge folders. The result must be:
 
 ```

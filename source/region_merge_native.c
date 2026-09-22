@@ -89,6 +89,8 @@
 #define OFF_ACTOR_ROOT     0x1b8 // AActor::RootComponent
 #define OFF_COMP_LOCATION  0x1f0 // USceneComponent world location (3 doubles)
 #define OFF_ENG_PLAYER     0x5a0 // ARTSMultiEngineCPP::playerRef
+#define OFF_ENG_NODES      0x700 // native TArray<AResourceNode*>: every region's resource nodes
+#define OFF_NODE_REGION    0x2b0 // AResourceNode native ARegion*: the region it serves
 #define OFF_ROAD_POINTS    0x398 // ARoad native TArray<FVector>: cached world points
 #define OFF_UNIT_REGION    0x328 // ASMUnit native ARegion*; the save files units under it
 #define OFF_FRAME_LOCALS   0x28  // FFrame::Locals
@@ -659,6 +661,32 @@ static void share_lists(uint8_t *to, uint8_t *from) {
              (void *)from, (void *)to);
 }
 
+// Berries, mushrooms, fish, game and stone are grouped into resource nodes,
+// five to a region, kept in one list on the engine; each node names the region
+// it serves. A gathering hut looking for work asks for its own region and takes
+// only the nodes naming it, and a hut on merged land belongs to the town, so
+// the land's nodes were never offered to it: the family was sent to do chores
+// and the hut showed no yield. Point the land's nodes at its town. A save keeps
+// a node's position, not its region, and the load works the region out again
+// from where the node stands, so this is repeated on every sweep.
+static int hand_over_nodes(uint8_t *town, uint8_t *land) {
+    if (!town || !land || town == land) return 0;
+    uint8_t *eng = *(uint8_t **)(land + OFF_REG_MASTER);
+    if (!eng) return 0;
+    TArrayRaw *nodes = (TArrayRaw *)(eng + OFF_ENG_NODES);
+    if (nodes->num <= 0 || nodes->num > 100000 || !nodes->data) return 0;
+    int moved = 0;
+    for (int32_t i = 0; i < nodes->num; i++) {
+        uint8_t *n = ((uint8_t **)nodes->data)[i];
+        if (n && *(uint8_t **)(n + OFF_NODE_REGION) == land) {
+            *(uint8_t **)(n + OFF_NODE_REGION) = town;
+            moved++;
+        }
+    }
+    if (moved) nlog("handed %d resource nodes %p -> %p", moved, (void *)land, (void *)town);
+    return moved;
+}
+
 // Roads already on the land worked out their regions while it still stood
 // alone, so they named the land and not its town. Have each work it out again.
 // The game appends a planning record per road without checking for one already
@@ -781,6 +809,7 @@ static void hooked_exec(void *ctx, void *stack, void *result) {
                 move_region_buildings((uint8_t *)ctx, (uint8_t *)arg);
                 move_region_residents((uint8_t *)ctx, (uint8_t *)arg);
                 share_lists((uint8_t *)ctx, (uint8_t *)arg);
+                hand_over_nodes((uint8_t *)ctx, (uint8_t *)arg);
             } else if (op == OP_SYNC_STOCK) { // arg is the merged region
                 sync_stock((uint8_t *)arg, (uint8_t *)ctx);
             } else if (op == OP_REFRESH_ROADS) { // arg is the merged region
